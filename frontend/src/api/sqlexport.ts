@@ -79,3 +79,33 @@ export function exportPreCheck(params: {
       throw new Error(e.msg || "pre_check failed");
     });
 }
+
+/**
+ * 下载导出文件（GET /downloadfile/）。
+ * local/sftp 返回文件流（直接触发下载）；云存储（s3c/azure）返回 JSON {type:'redirect',url} 重定向；
+ * 文件不存在/失败返回 JSON {error}。复刻旧版 detail.html 的探测+分流逻辑。
+ */
+export async function downloadExportFile(workflowId: number, fileName: string) {
+  const filePath = `/downloadfile/?file_name=${encodeURIComponent(fileName)}&workflow_id=${workflowId}`;
+  // HEAD 探测：JSON 响应=重定向或错误；否则=文件流
+  const head = await fetch(filePath, { method: "HEAD", cache: "no-store" });
+  const ct = head.headers.get("content-type") || "";
+  if (ct.includes("application/json")) {
+    const res = await fetch(filePath);
+    const data = await res.json();
+    if (data.error) throw new Error(data.error);
+    if (data.type === "redirect") {
+      window.location.href = data.url;
+      return;
+    }
+    throw new Error("未知的响应格式");
+  }
+  // 文件流：触发附件下载
+  const a = document.createElement("a");
+  a.href = filePath;
+  a.download = fileName;
+  a.style.display = "none";
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+}

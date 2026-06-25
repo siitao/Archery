@@ -19,6 +19,7 @@ import {
   type WorkflowLogRow,
 } from "@/api/sqlworkflow";
 import SqlReviewTable from "@/components/SqlReviewTable.vue";
+import { downloadExportFile } from "@/api/sqlexport";
 
 const route = useRoute();
 const auth = useAuthStore();
@@ -168,6 +169,31 @@ function afterAction() {
   logLoaded = false;
   if (activeTab.value === "logs") loadLogs();
   loadDetail();
+}
+
+/** 是否为已完成的导出工单（可下载文件） */
+const canDownload = computed(() => {
+  const w = detail.value?.workflow;
+  return !!(
+    w &&
+    Number(w.is_offline_export) === 1 &&
+    w.file_name &&
+    w.status === "workflow_finish"
+  );
+});
+
+const downloading = ref(false);
+
+async function onDownload() {
+  if (!detail.value?.workflow.file_name) return;
+  downloading.value = true;
+  try {
+    await downloadExportFile(workflowId, detail.value.workflow.file_name);
+  } catch (e) {
+    ElMessage.error(`下载失败：${(e as Error).message || "服务器连接失败"}`);
+  } finally {
+    downloading.value = false;
+  }
 }
 
 async function onPass() {
@@ -438,6 +464,14 @@ onUnmounted(stopPolling);
         </el-button>
         <el-button v-if="detail.is_can_cancel" type="danger" @click="onCancel">
           终止/驳回
+        </el-button>
+        <el-button
+          v-if="canDownload"
+          type="warning"
+          :loading="downloading"
+          @click="onDownload"
+        >
+          下载文件
         </el-button>
       </el-card>
     </template>

@@ -21,6 +21,7 @@ export interface SqlWorkflowInfo {
   finish_time: string | null;
   is_manual: number;
   is_offline_export: number;
+  file_name?: string;
   [key: string]: unknown;
 }
 
