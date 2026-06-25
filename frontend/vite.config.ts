@@ -37,6 +37,8 @@ const proxy = {
   "/sqlexport/": { target: apiTarget, changeOrigin: true },
   // 数据归档（PTArchiver）：list/apply/audit/log/switch/once
   "/archive/": { target: apiTarget, changeOrigin: true },
+  // My2SQL：binlog 列表 / 解析
+  "/binlog/": { target: apiTarget, changeOrigin: true },
 };
 
 // https://vitejs.dev/config/

@@ -84,6 +84,12 @@ const routes: RouteRecordRaw[] = [
         meta: { title: "归档详情", perm: "sql.menu_archive" },
       },
       {
+        path: "my2sql",
+        name: "my2sql",
+        component: () => import("@/views/my2sql/Index.vue"),
+        meta: { title: "My2SQL", perm: "sql.menu_my2sql" },
+      },
+      {
         path: "sqlquery",
         name: "sqlquery-index",
         component: () => import("@/views/sqlquery/Index.vue"),

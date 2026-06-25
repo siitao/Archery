@@ -12,8 +12,10 @@ import {
 import { sqlCheck, submitWorkflow, type ReviewRow } from "@/api/sqlworkflow";
 import SqlEditor from "@/components/SqlEditor.vue";
 import SqlReviewTable from "@/components/SqlReviewTable.vue";
+import { useBinlogHandoffStore } from "@/stores/binlogHandoff";
 
 const router = useRouter();
+const handoff = useBinlogHandoffStore();
 
 const form = reactive({
   workflow_name: "",
@@ -162,7 +164,15 @@ async function onSubmit() {
   }
 }
 
-onMounted(loadGroups);
+onMounted(() => {
+  // 消费 My2SQL「提交工单」handoff：预填工单名 + SQL（实例/组/库留用户选）
+  const pending = handoff.consume();
+  if (pending) {
+    form.workflow_name = pending.workflow_name;
+    sqlContent.value = pending.sql_content;
+  }
+  loadGroups();
+});
 </script>
 
 <template>

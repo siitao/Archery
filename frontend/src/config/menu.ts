@@ -65,7 +65,7 @@ export const menuItems: MenuItem[] = [
     perm: "sql.menu_tools",
     children: [
       { title: "PTArchiver", perm: "sql.menu_archive", routeName: "archive" },
-      { title: "My2SQL", perm: "sql.menu_my2sql", legacyPath: "/my2sql/" },
+      { title: "My2SQL", perm: "sql.menu_my2sql", routeName: "my2sql" },
       { title: "SchemaSync", perm: "sql.menu_schemasync", routeName: "schemasync" },
     ],
   },
