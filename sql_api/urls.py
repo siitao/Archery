@@ -11,7 +11,7 @@ from drf_spectacular.views import (
     SpectacularRedocView,
     SpectacularSwaggerView,
 )
-from . import api_user, api_instance, api_workflow, api_sqlquery, api_document
+from . import api_user, api_instance, api_workflow, api_sqlquery, api_document, api_query_priv, api_archiver
 
 router = routers.DefaultRouter()
 
@@ -68,6 +68,13 @@ urlpatterns = [
         "v1/document/dbaprinciples/",
         api_document.DbAprinciplesDocument.as_view(),
     ),
+    path(
+        "v1/query_priv/<int:apply_id>/",
+        api_query_priv.QueryPrivApplyDetail.as_view(),
+    ),
+    path("v1/query_priv/audit/", api_query_priv.QueryPrivAudit.as_view()),
+    path("v1/archive/<int:pk>/", api_archiver.ArchiveDetail.as_view()),
+    path("v1/archive/audit/", api_archiver.ArchiveAudit.as_view()),
     path("info", views.info),
     path("debug", views.debug),
     path("do_once/mirage", views.mirage),
