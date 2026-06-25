@@ -6,6 +6,12 @@ const props = defineProps<{
   rows: ReviewRow[];
   /** review=提交检测阶段（无耗时/阶段列）；execute=执行结果阶段 */
   phase: "review" | "execute";
+  /** 传入则对含 sqlsha1 的行显示「进度」操作（OSC 执行进度入口） */
+  oscWorkflowId?: number;
+}>();
+
+const emit = defineEmits<{
+  (e: "osc", row: ReviewRow): void;
 }>();
 
 const page = ref(1);
@@ -60,6 +66,23 @@ function levelText(lvl: unknown): string {
         <template #default="{ row }">{{ (row as ReviewRow).stagestatus }}</template>
       </el-table-column>
     </template>
+    <el-table-column
+      v-if="oscWorkflowId"
+      label="操作"
+      width="80"
+      fixed="right"
+    >
+      <template #default="{ row }">
+        <el-button
+          v-if="(row as ReviewRow).sqlsha1"
+          link
+          type="primary"
+          @click="emit('osc', row as ReviewRow)"
+        >
+          进度
+        </el-button>
+      </template>
+    </el-table-column>
   </el-table>
 
   <div v-if="rows.length > pageSize" class="pager">

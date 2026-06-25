@@ -20,7 +20,7 @@ import {
 } from "@/api/sqlworkflow";
 import SqlReviewTable from "@/components/SqlReviewTable.vue";
 import { downloadExportFile } from "@/api/sqlexport";
-import { fetchBackupSql, downloadRollback } from "@/api/sqlworkflow";
+import { fetchBackupSql, downloadRollback, oscControl, type OscProgressRow } from "@/api/sqlworkflow";
 
 const route = useRoute();
 const auth = useAuthStore();
@@ -219,6 +219,64 @@ function onDownloadRollback() {
   downloadRollback(workflowId);
 }
 
+// OSC 执行进度（goInception pt-osc/gh-ost）
+const oscVisible = ref(false);
+const oscRows = ref<OscProgressRow[]>([]);
+const oscLoading = ref(false);
+const oscSqlsha1 = ref("");
+let oscTimer: number | null = null;
+
+async function loadOsc() {
+  if (!oscSqlsha1.value) return;
+  oscLoading.value = true;
+  try {
+    const { rows } = await oscControl(workflowId, oscSqlsha1.value, "get");
+    oscRows.value = rows;
+  } catch {
+    // 拦截器已提示
+  } finally {
+    oscLoading.value = false;
+  }
+}
+
+function openOsc(row: ReviewRow) {
+  oscSqlsha1.value = String(row.sqlsha1 || "");
+  oscRows.value = [];
+  oscVisible.value = true;
+  loadOsc();
+  // 轮询刷新进度（10s）
+  oscTimer = window.setInterval(loadOsc, 10000);
+}
+
+function closeOsc() {
+  oscVisible.value = false;
+  if (oscTimer) {
+    clearInterval(oscTimer);
+    oscTimer = null;
+  }
+}
+
+async function onOscControl(command: "pause" | "resume" | "kill") {
+  if (command === "kill") {
+    try {
+      await ElMessageBox.confirm(
+        "确认立即终止？终止后需要手动清理触发器以及相关中间表！",
+        "终止 OSC",
+        { type: "warning" }
+      );
+    } catch {
+      return;
+    }
+  }
+  try {
+    const { msg } = await oscControl(workflowId, oscSqlsha1.value, command);
+    ElMessage.success(msg || "操作成功，请稍后刷新获取最新状态");
+    loadOsc();
+  } catch {
+    // 拦截器已提示
+  }
+}
+
 async function onPass() {
   try {
     const { value } = await ElMessageBox.prompt("审核备注", "审核通过", {
@@ -333,7 +391,10 @@ onMounted(() => {
   loadDetail();
 });
 
-onUnmounted(stopPolling);
+onUnmounted(() => {
+  stopPolling();
+  if (oscTimer) clearInterval(oscTimer);
+});
 </script>
 
 <template>
@@ -428,6 +489,8 @@ onUnmounted(stopPolling);
             <SqlReviewTable
               :rows="reviewRows"
               :phase="isFinished ? 'execute' : 'review'"
+              :osc-workflow-id="isFinished ? workflowId : undefined"
+              @osc="openOsc"
             />
             <div v-if="detail.last_operation_info" class="last-op">
               最后操作：{{ detail.last_operation_info }}
@@ -525,6 +588,30 @@ onUnmounted(stopPolling);
       <SqlReviewTable v-loading="rollbackLoading" :rows="rollbackRows" phase="review" />
     </el-dialog>
 
+    <!-- OSC 执行进度弹窗 -->
+    <el-dialog
+      :model-value="oscVisible"
+      title="OSC 执行进度"
+      width="860px"
+      @close="closeOsc"
+    >
+      <template #header-extra>
+        <el-button size="small" @click="loadOsc">刷新</el-button>
+      </template>
+      <div class="osc-toolbar">
+        <el-button type="warning" size="small" @click="onOscControl('pause')">暂停</el-button>
+        <el-button type="success" size="small" @click="onOscControl('resume')">恢复</el-button>
+        <el-button type="danger" size="small" @click="onOscControl('kill')">终止</el-button>
+      </div>
+      <el-table v-loading="oscLoading" :data="oscRows" stripe border max-height="420">
+        <el-table-column label="库" prop="DBNAME" width="120" />
+        <el-table-column label="表" prop="TABLENAME" width="140" />
+        <el-table-column label="进度" prop="PERCENT" width="90" />
+        <el-table-column label="剩余时间" prop="REMAINTIME" width="120" />
+        <el-table-column label="信息" prop="INFOMATION" show-overflow-tooltip />
+      </el-table>
+    </el-dialog>
+
     <!-- 改可执行时间弹窗 -->
     <el-dialog v-model="runDateVisible" title="修改可执行时间" width="480px">
       <el-form label-width="100px">
@@ -558,6 +645,12 @@ onUnmounted(stopPolling);
   display: flex;
   flex-direction: column;
   gap: 16px;
+}
+
+.osc-toolbar {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 12px;
 }
 
 .header-top {

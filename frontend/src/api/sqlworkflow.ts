@@ -201,6 +201,37 @@ export function downloadRollback(workflowId: number) {
   document.body.removeChild(a);
 }
 
+/** OSC 进度行（goInception pt-osc/gh-ost） */
+export interface OscProgressRow {
+  DBNAME?: string;
+  TABLENAME?: string;
+  PERCENT?: string | number;
+  SQLSHA1?: string;
+  REMAINTIME?: string;
+  INFOMATION?: string;
+  [key: string]: unknown;
+}
+
+/** OSC 控制（POST /inception/osc_control/，command get/pause/resume/kill） */
+export async function oscControl(
+  workflowId: number,
+  sqlsha1: string,
+  command: "get" | "pause" | "resume" | "kill"
+): Promise<{ rows: OscProgressRow[]; msg: string | null }> {
+  const form = new URLSearchParams();
+  form.append("workflow_id", String(workflowId));
+  form.append("sqlsha1", sqlsha1);
+  form.append("command", command);
+  const { data } = await request.post<{
+    total: number;
+    rows: OscProgressRow[];
+    msg: string | null;
+  }>("/inception/osc_control/", form, {
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+  });
+  return { rows: data.rows || [], msg: data.msg || null };
+}
+
 /** SQL 检测结果（ExecuteCheckResultSerializer） */
 export interface SqlCheckResult {
   is_execute: boolean;

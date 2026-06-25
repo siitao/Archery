@@ -45,6 +45,8 @@ const proxy = {
   // 用完整路径，避免与 SPA 的 /sqlworkflow/:id、/sqlworkflow/submit 路由前缀冲突
   "/sqlworkflow/backup_sql/": { target: apiTarget, changeOrigin: true },
   "/rollback/": { target: apiTarget, changeOrigin: true },
+  // SQL 上线 Step E：OSC 进度控制（goInception pt-osc/gh-ost）
+  "/inception/osc_control/": { target: apiTarget, changeOrigin: true },
 };
 
 // https://vitejs.dev/config/
