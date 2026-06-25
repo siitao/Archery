@@ -15,6 +15,7 @@
     "ace-builds": "^1.44.0",
     "axios": "^1.18.1",
     "dompurify": "^3.4.11",
+    "echarts": "^6.1.0",
     "element-plus": "^2.14.2",
     "marked": "^18.0.5",
     "pinia": "^3.0.4",
