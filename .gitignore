@@ -28,3 +28,8 @@ archery_custom
 static/
 local_settings.py
 nohup.out
+# 编辑器备份 / undo 文件（.env~ 含 .env 明文密钥备份，必须忽略）
+*~
+*.un~
+# 本机开发依赖清单（Windows + Python 3.11 专用，不入库）
+requirements-local.txt

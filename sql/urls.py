@@ -100,6 +100,7 @@ urlpatterns = [
     path("check/file_storage_connect/", check.file_storage_connect),
     path("group/group/", resource_group.group),
     path("group/addrelation/", resource_group.addrelation),
+    path("group/removerelation/", resource_group.removerelation),
     path("group/relations/", resource_group.associated_objects),
     path("group/instances/", resource_group.instances),
     path("group/unassociated/", resource_group.unassociated_objects),

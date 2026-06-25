@@ -50,3 +50,13 @@ class IsSqlQueryPageUser(permissions.BasePermission):
         if user.is_superuser:
             return True
         return user.has_perm("sql.menu_query") or user.has_perm("sql.menu_sqlquery")
+
+
+class IsDocumentPageUser(permissions.BasePermission):
+    """相关文档页面权限：登录且具备 sql.menu_document 权限（超管放行）。"""
+
+    def has_permission(self, request, view):
+        user = request.user
+        if not user or not user.is_authenticated:
+            return False
+        return user.is_superuser or user.has_perm("sql.menu_document")

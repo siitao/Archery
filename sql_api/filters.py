@@ -1,5 +1,5 @@
 from django_filters import rest_framework as filters
-from sql.models import Users, Instance, SqlWorkflowContent, WorkflowAudit
+from sql.models import Users, Instance, SqlWorkflowContent, WorkflowAudit, ResourceGroup
 
 
 class UserFilter(filters.FilterSet):
@@ -32,7 +32,9 @@ class WorkflowFilter(filters.FilterSet):
             "workflow__instance_id": ["exact"],
             "workflow__db_name": ["exact"],
             "workflow__engineer": ["exact"],
+            "workflow__group_id": ["exact"],
             "workflow__status": ["exact"],
+            "workflow__syntax_type": ["exact"],
             "workflow__create_time": ["lt", "gte"],
         }
 
@@ -43,4 +45,13 @@ class WorkflowAuditFilter(filters.FilterSet):
         fields = {
             "workflow_title": ["icontains"],
             "workflow_type": ["exact"],
+        }
+
+
+class ResourceGroupFilter(filters.FilterSet):
+    class Meta:
+        model = ResourceGroup
+        fields = {
+            "group_id": ["exact"],
+            "group_name": ["icontains"],
         }

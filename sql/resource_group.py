@@ -190,6 +190,29 @@ def addrelation(request):
     return HttpResponse(json.dumps(result), content_type="application/json")
 
 
+@superuser_required
+def removerelation(request):
+    """
+    移除资源组关联对象（addrelation 的反向操作）
+    type：(0, '用户'), (1, '实例')
+    """
+    group_id = int(request.POST.get("group_id"))
+    object_type = request.POST.get("object_type")
+    object_list = json.loads(request.POST.get("object_info"))
+    try:
+        resource_group = ResourceGroup.objects.get(group_id=group_id)
+        obj_ids = [int(obj.split(",")[0]) for obj in object_list]
+        if object_type == "0":  # 用户
+            resource_group.users_set.remove(*Users.objects.filter(pk__in=obj_ids))
+        elif object_type == "1":  # 实例
+            resource_group.instance_set.remove(*Instance.objects.filter(pk__in=obj_ids))
+        result = {"status": 0, "msg": "ok"}
+    except Exception as e:
+        logger.error(traceback.format_exc())
+        result = {"status": 1, "msg": str(e)}
+    return HttpResponse(json.dumps(result), content_type="application/json")
+
+
 def auditors(request):
     """获取资源组的审批流程"""
     group_name = request.POST.get("group_name")

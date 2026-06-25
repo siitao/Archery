@@ -4,7 +4,9 @@ import traceback
 
 from django.contrib.auth.decorators import permission_required
 from django.contrib.auth.models import Group
+from django.core.exceptions import PermissionDenied
 from django.db import transaction
+from django.shortcuts import get_object_or_404
 from django.utils.decorators import method_decorator
 from django_q.tasks import async_task
 from drf_spectacular.utils import extend_schema
@@ -26,9 +28,16 @@ from sql.models import (
 from sql.notify import notify_for_audit, notify_for_execute
 from sql.query_privileges import _query_apply_audit_call_back
 from sql.utils.resource_group import user_groups
-from sql.utils.sql_review import can_cancel, can_execute, on_correct_time_period
-from sql.utils.tasks import del_schedule
-from sql.utils.workflow_audit import Audit, get_auditor, AuditException
+from sql.utils.sql_review import (
+    can_cancel,
+    can_execute,
+    can_rollback,
+    can_timingtask,
+    can_view,
+    on_correct_time_period,
+)
+from sql.utils.tasks import add_sql_schedule, del_schedule, task_info
+from sql.utils.workflow_audit import Audit, AuditV2, get_auditor, AuditException
 from .filters import WorkflowFilter, WorkflowAuditFilter
 from .pagination import CustomizedPagination
 from .serializers import (
@@ -167,6 +176,7 @@ class WorkflowAuditList(generics.ListAPIView):
     列出指定用户当前待自己审核的工单
     """
 
+    permission_classes = [permissions.IsAuthenticated]
     filterset_class = WorkflowAuditFilter
     pagination_class = CustomizedPagination
     serializer_class = WorkflowAuditListSerializer
@@ -218,6 +228,8 @@ class AuditWorkflow(views.APIView):
     审核workflow，包括查询权限申请、SQL上线申请、数据归档申请
     """
 
+    permission_classes = [permissions.IsAuthenticated]
+
     @extend_schema(
         summary="审核工单",
         request=AuditWorkflowSerializer,
@@ -244,7 +256,15 @@ class AuditWorkflow(views.APIView):
             notify_config_key = "Cancel"
             success_message = "canceled"
             if auditor.workflow.engineer == serializer.data["engineer"]:
+                # 提交人终止自己的工单
                 action = WorkflowAction.ABORT
+            elif Audit.can_review(
+                user,
+                serializer.data["workflow_id"],
+                serializer.data["workflow_type"],
+            ):
+                # 审核人驳回
+                action = WorkflowAction.REJECT
             else:
                 raise serializers.ValidationError({"errors": "用户无权操作此工单"})
         else:
@@ -307,6 +327,8 @@ class ExecuteWorkflow(views.APIView):
     """
     执行workflow，包括SQL上线工单、数据归档工单
     """
+
+    permission_classes = [permissions.IsAuthenticated]
 
     @extend_schema(
         summary="执行工单",
@@ -424,6 +446,7 @@ class WorkflowLogList(generics.ListAPIView):
     获取某个工单的日志
     """
 
+    permission_classes = [permissions.IsAuthenticated]
     pagination_class = CustomizedPagination
     serializer_class = WorkflowLogListSerializer
     queryset = WorkflowLog.objects.all()
@@ -453,3 +476,178 @@ class WorkflowLogList(generics.ListAPIView):
         serializer_obj = self.get_serializer(page_log, many=True)
         data = {"data": serializer_obj.data}
         return self.get_paginated_response(data)
+
+
+class WorkflowDetail(views.APIView):
+    """SQL上线工单详情：含审批流、操作权限标志、定时任务信息"""
+
+    permission_classes = [permissions.IsAuthenticated]
+
+    @extend_schema(summary="工单详情", description="获取工单详情、审批流、操作权限标志")
+    def get(self, request, workflow_id):
+        workflow_detail = get_object_or_404(SqlWorkflow, pk=workflow_id)
+        if not can_view(request.user, workflow_id):
+            raise PermissionDenied
+        workflow_content = get_object_or_404(
+            SqlWorkflowContent, workflow_id=workflow_id
+        )
+        data = WorkflowContentSerializer(workflow_content).data
+
+        # 审批流（与旧版 detail 视图逻辑保持一致）
+        audit_handler = AuditV2(workflow=workflow_detail)
+        review_info_obj = audit_handler.get_review_info()
+        review_info = [
+            {
+                "group_name": node.group.name if node.group else "",
+                "is_current_node": node.is_current_node,
+                "is_passed_node": node.is_passed_node,
+                "is_auto_pass": node.is_auto_pass,
+            }
+            for node in review_info_obj.nodes
+        ]
+        # 当前审核人（当前节点权限组内、属于该工单资源组的活跃用户）
+        current_reviewers = []
+        for node in review_info_obj.nodes:
+            if not node.is_current_node or not node.group:
+                continue
+            for audit_user in node.group.user_set.filter(is_active=1):
+                group_names = [g.group_name for g in user_groups(audit_user)]
+                if workflow_detail.group_name in group_names:
+                    current_reviewers.append(
+                        {
+                            "username": audit_user.username,
+                            "display": audit_user.display,
+                        }
+                    )
+
+        # 操作权限标志 + 最近操作信息（自动审核不通过时全部不可操作）
+        if workflow_detail.status != "workflow_autoreviewwrong":
+            is_can_review = Audit.can_review(request.user, workflow_id, 2)
+            is_can_execute = can_execute(request.user, workflow_id)
+            is_can_timingtask = can_timingtask(request.user, workflow_id)
+            is_can_cancel = can_cancel(request.user, workflow_id)
+            is_can_rollback = can_rollback(request.user, workflow_id)
+            try:
+                audit_detail = Audit.detail_by_workflow_id(
+                    workflow_id=workflow_id,
+                    workflow_type=WorkflowType.SQL_REVIEW,
+                )
+                last_operation_info = (
+                    Audit.logs(audit_id=audit_detail.audit_id)
+                    .latest("id")
+                    .operation_info
+                )
+            except Exception as e:
+                logger.debug(f"无审核日志记录：{e}")
+                last_operation_info = ""
+        else:
+            is_can_review = False
+            is_can_execute = False
+            is_can_timingtask = False
+            is_can_cancel = False
+            is_can_rollback = False
+            last_operation_info = ""
+
+        # 定时任务下次执行时间
+        run_date = ""
+        if workflow_detail.status == "workflow_timingtask":
+            job = task_info(f"sqlreview-timing-{workflow_id}")
+            if job:
+                run_date = job.next_run
+
+        manual = bool(SysConfig().get("manual"))
+        data.update(
+            {
+                "review_info": review_info,
+                "current_reviewers": current_reviewers,
+                "last_operation_info": last_operation_info,
+                "is_can_review": is_can_review,
+                "is_can_execute": is_can_execute,
+                "is_can_timingtask": is_can_timingtask,
+                "is_can_cancel": is_can_cancel,
+                "is_can_rollback": is_can_rollback,
+                "manual": manual,
+                "run_date": run_date,
+            }
+        )
+        return Response(data)
+
+
+class TimingTask(views.APIView):
+    """为SQL上线工单设置定时执行"""
+
+    permission_classes = [permissions.IsAuthenticated]
+
+    @extend_schema(summary="定时执行", description="为工单设置定时执行时间")
+    def post(self, request):
+        workflow_id = request.data.get("workflow_id")
+        run_date = request.data.get("run_date")
+        if not workflow_id or not run_date:
+            raise serializers.ValidationError(
+                {"errors": "workflow_id 和 run_date 不能为空"}
+            )
+        if run_date < datetime.datetime.now().strftime("%Y-%m-%d %H:%M"):
+            raise serializers.ValidationError({"errors": "时间不能小于当前时间"})
+
+        workflow_detail = get_object_or_404(SqlWorkflow, pk=workflow_id)
+        if not (
+            request.user.has_perm("sql.sql_execute")
+            or request.user.has_perm("sql.sql_execute_for_resource_group")
+        ):
+            raise serializers.ValidationError({"errors": "你无权执行当前工单！"})
+        if can_timingtask(request.user, workflow_id) is False:
+            raise serializers.ValidationError({"errors": "你无权操作当前工单！"})
+
+        run_date_dt = datetime.datetime.strptime(run_date, "%Y-%m-%d %H:%M")
+        if on_correct_time_period(workflow_id, run_date_dt) is False:
+            raise serializers.ValidationError(
+                {"errors": "不在可执行时间范围内，如果需要修改执行时间请重新提交工单!"}
+            )
+        schedule_name = f"sqlreview-timing-{workflow_id}"
+        try:
+            with transaction.atomic():
+                workflow_detail.status = "workflow_timingtask"
+                workflow_detail.save()
+                add_sql_schedule(schedule_name, run_date_dt, workflow_id)
+                audit_id = Audit.detail_by_workflow_id(
+                    workflow_id=workflow_id,
+                    workflow_type=WorkflowType.SQL_REVIEW,
+                ).audit_id
+                Audit.add_log(
+                    audit_id=audit_id,
+                    operation_type=4,
+                    operation_type_desc="定时执行",
+                    operation_info=f"定时执行时间：{run_date_dt}",
+                    operator=request.user.username,
+                    operator_display=request.user.display,
+                )
+        except Exception as msg:
+            logger.error(f"定时执行工单报错：{traceback.format_exc()}")
+            raise serializers.ValidationError({"errors": str(msg)})
+        return Response({"msg": "定时执行设置成功"})
+
+
+class AlterRunDate(views.APIView):
+    """审核人修改工单可执行时间范围"""
+
+    permission_classes = [permissions.IsAuthenticated]
+
+    @extend_schema(summary="修改可执行时间", description="审核人修改工单可执行时间范围")
+    @method_decorator(permission_required("sql.sql_review", raise_exception=True))
+    def post(self, request):
+        workflow_id = request.data.get("workflow_id")
+        run_date_start = request.data.get("run_date_start") or None
+        run_date_end = request.data.get("run_date_end") or None
+        if not workflow_id:
+            raise serializers.ValidationError({"errors": "workflow_id 不能为空"})
+        if Audit.can_review(request.user, workflow_id, 2) is False:
+            raise serializers.ValidationError({"errors": "你无权操作当前工单！"})
+        try:
+            SqlWorkflow(
+                id=workflow_id,
+                run_date_start=run_date_start,
+                run_date_end=run_date_end,
+            ).save(update_fields=["run_date_start", "run_date_end"])
+        except Exception as msg:
+            raise serializers.ValidationError({"errors": str(msg)})
+        return Response({"msg": "可执行时间已更新"})

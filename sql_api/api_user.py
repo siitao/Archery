@@ -1,6 +1,8 @@
 from rest_framework import views, generics, status, permissions
 from rest_framework.response import Response
 from drf_spectacular.utils import extend_schema
+from django.utils.decorators import method_decorator
+from django.views.decorators.csrf import ensure_csrf_cookie
 from .serializers import (
     UserSerializer,
     UserDetailSerializer,
@@ -14,7 +16,7 @@ from .serializers import (
 )
 from .pagination import CustomizedPagination
 from .permissions import IsOwner
-from .filters import UserFilter
+from .filters import UserFilter, ResourceGroupFilter
 from django_redis import get_redis_connection
 from django.contrib.auth.models import Group
 from django.contrib.auth import authenticate, login
@@ -175,9 +177,12 @@ class ResourceGroupList(generics.ListAPIView):
     列出所有的resourcegroup或者创建一个新的resourcegroup
     """
 
+    permission_classes = [permissions.IsAuthenticated]
     pagination_class = CustomizedPagination
     serializer_class = ResourceGroupSerializer
-    queryset = ResourceGroup.objects.all().order_by("group_id")
+    filterset_class = ResourceGroupFilter
+    # 过滤已软删的资源组（对齐旧版 /group/group/ 的 is_deleted=0 语义）
+    queryset = ResourceGroup.objects.filter(is_deleted=0).order_by("group_id")
 
     @extend_schema(
         summary="资源组清单",
@@ -220,6 +225,16 @@ class ResourceGroupDetail(views.APIView):
             raise Http404
 
     @extend_schema(
+        summary="资源组详情",
+        responses={200: ResourceGroupSerializer},
+        description="获取一个资源组详情",
+    )
+    def get(self, request, pk):
+        group = self.get_object(pk)
+        serializer = ResourceGroupSerializer(group)
+        return Response(serializer.data)
+
+    @extend_schema(
         summary="更新资源组",
         request=ResourceGroupSerializer,
         responses={200: ResourceGroupSerializer},
@@ -233,10 +248,12 @@ class ResourceGroupDetail(views.APIView):
             return Response(serializer.data)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
-    @extend_schema(summary="删除资源组", description="删除一个资源组")
+    @extend_schema(summary="删除资源组", description="软删除一个资源组（is_deleted=1）")
     def delete(self, request, pk):
         group = self.get_object(pk)
-        group.delete()
+        # 软删除，对齐旧版语义，避免误删导致关联数据丢失
+        group.is_deleted = 1
+        group.save(update_fields=["is_deleted"])
         return Response(status=status.HTTP_204_NO_CONTENT)
 
 
@@ -432,3 +449,33 @@ class TwoFAVerify(views.APIView):
                 get_ding_user_id(engineer)
 
         return Response(result)
+
+
+@method_decorator(ensure_csrf_cookie, name="dispatch")
+class CurrentUser(views.APIView):
+    """当前登录用户信息 + 全部权限位，供前端 SPA 渲染菜单 / 路由守卫使用。
+
+    ensure_csrf_cookie 作用于 dispatch，使得即便是 401（未登录）响应也会种下
+    csrftoken cookie，供 SPA 在登录 POST 前通过 X-CSRFToken 完成校验。
+    """
+
+    permission_classes = [permissions.IsAuthenticated]
+
+    @extend_schema(
+        summary="当前用户",
+        description="返回当前登录用户的基本信息与全部权限（含 sql.menu_* 等），供前端菜单/路由守卫使用。",
+    )
+    def get(self, request):
+        user = request.user
+        return Response(
+            {
+                "id": user.id,
+                "username": user.username,
+                "display": user.display or user.username,
+                "email": user.email or "",
+                "is_superuser": user.is_superuser,
+                "is_staff": user.is_staff,
+                "resource_group": [rg.group_id for rg in user.resource_group.all()],
+                "permissions": sorted(user.get_all_permissions()),
+            }
+        )

@@ -11,7 +11,7 @@ from drf_spectacular.views import (
     SpectacularRedocView,
     SpectacularSwaggerView,
 )
-from . import api_user, api_instance, api_workflow, api_sqlquery
+from . import api_user, api_instance, api_workflow, api_sqlquery, api_document
 
 router = routers.DefaultRouter()
 
@@ -31,6 +31,7 @@ urlpatterns = [
     ),
     path("v1/user/", api_user.UserList.as_view()),
     path("v1/user/<int:pk>/", api_user.UserDetail.as_view()),
+    path("v1/user/me/", api_user.CurrentUser.as_view()),
     path("v1/user/group/", api_user.GroupList.as_view()),
     path("v1/user/group/<int:pk>/", api_user.GroupDetail.as_view()),
     path("v1/user/resourcegroup/", api_user.ResourceGroupList.as_view()),
@@ -60,6 +61,13 @@ urlpatterns = [
     path("v1/workflow/auditlist/", api_workflow.WorkflowAuditList.as_view()),
     path("v1/workflow/execute/", api_workflow.ExecuteWorkflow.as_view()),
     path("v1/workflow/log/", api_workflow.WorkflowLogList.as_view()),
+    path("v1/workflow/timingtask/", api_workflow.TimingTask.as_view()),
+    path("v1/workflow/alter_run_date/", api_workflow.AlterRunDate.as_view()),
+    path("v1/workflow/<int:workflow_id>/", api_workflow.WorkflowDetail.as_view()),
+    path(
+        "v1/document/dbaprinciples/",
+        api_document.DbAprinciplesDocument.as_view(),
+    ),
     path("info", views.info),
     path("debug", views.debug),
     path("do_once/mirage", views.mirage),
