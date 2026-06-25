@@ -172,6 +172,35 @@ export function alterRunDate(params: {
   return request.post<{ msg: string }>("/api/v1/workflow/alter_run_date/", params);
 }
 
+/** 回滚语句行（backup_sql 返回，get_rollback 列表，元素为 SQL 字符串或 {sql,...}） */
+export type BackupSqlRow = string | ReviewRow;
+
+/** 查看回滚 SQL（GET /sqlworkflow/backup_sql/，{status,msg,rows}） */
+export async function fetchBackupSql(workflowId: number): Promise<ReviewRow[]> {
+  const { data } = await request.get<{ status: number; msg: string; rows: BackupSqlRow[] }>(
+    "/sqlworkflow/backup_sql/",
+    { params: { workflow_id: workflowId } }
+  );
+  if (data.status !== 0) {
+    throw new Error(data.msg || "获取回滚语句失败");
+  }
+  // 统一成 ReviewRow[]（字符串 → {sql}）
+  return (data.rows || []).map((r) =>
+    typeof r === "string" ? { sql: r } : (r as ReviewRow)
+  );
+}
+
+/** 下载回滚 SQL 文件（GET /rollback/?workflow_id=&download=true，服务端打包文件流） */
+export function downloadRollback(workflowId: number) {
+  const url = `/rollback/?workflow_id=${workflowId}&download=true`;
+  const a = document.createElement("a");
+  a.href = url;
+  a.style.display = "none";
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+}
+
 /** SQL 检测结果（ExecuteCheckResultSerializer） */
 export interface SqlCheckResult {
   is_execute: boolean;

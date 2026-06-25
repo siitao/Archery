@@ -41,6 +41,10 @@ const proxy = {
   "/binlog/": { target: apiTarget, changeOrigin: true },
   // 数据导出：导出文件下载（local/sftp 文件流 / 云存储重定向）
   "/downloadfile/": { target: apiTarget, changeOrigin: true },
+  // SQL 上线 Step E：回滚语句查看（backup_sql）/ 下载（rollback）
+  // 用完整路径，避免与 SPA 的 /sqlworkflow/:id、/sqlworkflow/submit 路由前缀冲突
+  "/sqlworkflow/backup_sql/": { target: apiTarget, changeOrigin: true },
+  "/rollback/": { target: apiTarget, changeOrigin: true },
 };
 
 // https://vitejs.dev/config/

@@ -20,6 +20,7 @@ import {
 } from "@/api/sqlworkflow";
 import SqlReviewTable from "@/components/SqlReviewTable.vue";
 import { downloadExportFile } from "@/api/sqlexport";
+import { fetchBackupSql, downloadRollback } from "@/api/sqlworkflow";
 
 const route = useRoute();
 const auth = useAuthStore();
@@ -194,6 +195,28 @@ async function onDownload() {
   } finally {
     downloading.value = false;
   }
+}
+
+// 回滚 SQL
+const rollbackVisible = ref(false);
+const rollbackLoading = ref(false);
+const rollbackRows = ref<ReviewRow[]>([]);
+
+async function onViewRollback() {
+  rollbackVisible.value = true;
+  rollbackLoading.value = true;
+  rollbackRows.value = [];
+  try {
+    rollbackRows.value = await fetchBackupSql(workflowId);
+  } catch (e) {
+    ElMessage.error(`获取回滚语句失败：${(e as Error).message}`);
+  } finally {
+    rollbackLoading.value = false;
+  }
+}
+
+function onDownloadRollback() {
+  downloadRollback(workflowId);
 }
 
 async function onPass() {
@@ -473,6 +496,12 @@ onUnmounted(stopPolling);
         >
           下载文件
         </el-button>
+        <el-button v-if="detail.is_can_rollback" @click="onViewRollback">
+          查看回滚SQL
+        </el-button>
+        <el-button v-if="detail.is_can_rollback" @click="onDownloadRollback">
+          下载回滚SQL
+        </el-button>
       </el-card>
     </template>
 
@@ -489,6 +518,11 @@ onUnmounted(stopPolling);
         <el-button @click="timingVisible = false">取消</el-button>
         <el-button type="primary" @click="onTimingConfirm">确定</el-button>
       </template>
+    </el-dialog>
+
+    <!-- 回滚 SQL 弹窗 -->
+    <el-dialog v-model="rollbackVisible" title="回滚 SQL" width="860px">
+      <SqlReviewTable v-loading="rollbackLoading" :rows="rollbackRows" phase="review" />
     </el-dialog>
 
     <!-- 改可执行时间弹窗 -->
