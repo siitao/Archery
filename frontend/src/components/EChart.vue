@@ -4,7 +4,8 @@ import * as echarts from "echarts";
 import type { EChartsOption } from "echarts";
 
 const props = withDefaults(
-  defineProps<{ option: EChartsOption; height?: string }>(),
+  // 允许传 EChartsOption 或松散对象（规避 echarts v6 在某些上下文的 graphic 联合类型深检）
+  defineProps<{ option: EChartsOption | Record<string, unknown>; height?: string }>(),
   { height: "360px" }
 );
 
@@ -14,7 +15,7 @@ let ro: ResizeObserver | null = null;
 
 function render() {
   if (!chart) return;
-  chart.setOption(props.option, true);
+  chart.setOption(props.option as EChartsOption, true);
 }
 
 onMounted(async () => {

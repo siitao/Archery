@@ -1,8 +1,11 @@
 <script setup lang="ts">
 import { ref, watch, onMounted } from "vue";
+import { ElMessage } from "element-plus";
+import type { EChartsOption } from "echarts";
 import { useInstanceSelect } from "@/composables/useInstanceSelect";
 import { fetchQueryResources } from "@/api/sqlquery";
-import { fetchSlowReview, fetchSlowHistory } from "@/api/phase2";
+import { fetchSlowReview, fetchSlowHistory, fetchSlowTrend } from "@/api/phase2";
+import EChart from "@/components/EChart.vue";
 
 const { instanceName, instanceGroups, currentInstance, loadInstances } =
   useInstanceSelect();
@@ -91,6 +94,65 @@ function onTabChange(name: string | number) {
   else loadHistory();
 }
 
+// 趋势弹窗
+const trendVisible = ref(false);
+const trendLoading = ref(false);
+// 用宽松对象类型，避免 echarts v6 在 ref<EChartsOption> 赋值时触发的 graphic 联合类型深检问题
+const trendOption = ref<Record<string, unknown>>({});
+const trendTitle = ref("");
+
+async function openTrend(row: Record<string, unknown>) {
+  const checksum = String(row.SQLId || row.checksum || "");
+  if (!checksum) return ElMessage.warning("该行无 SQLId，无法查看趋势");
+  trendTitle.value = String(row.fingerprint || row.SQLText || checksum).slice(0, 80);
+  trendVisible.value = true;
+  trendLoading.value = true;
+  trendOption.value = {};
+  try {
+    const r = await fetchSlowTrend(checksum, instanceName.value);
+    const s0 = r.series[0] || { name: "慢查次数", data: [] };
+    const s1 = r.series[1] || { name: "慢查时长(95%)", data: [] };
+    trendOption.value = {
+      title: { text: "SQL 历史趋势", left: "center", textStyle: { fontSize: 14 } },
+      tooltip: { trigger: "axis" },
+      legend: { top: 24 },
+      grid: { left: 56, right: 24, top: 56, bottom: 48, containLabel: true },
+      xAxis: {
+        type: "category",
+        data: r.x,
+        boundaryGap: false,
+        axisLabel: { interval: 0, rotate: r.x.length > 12 ? 45 : 0 },
+      },
+      yAxis: [
+        { type: "value", name: "慢查次数" },
+        { type: "value", name: "慢查时长(95%)" },
+      ],
+      series: [
+        {
+          name: s0.name || "慢查次数",
+          type: "line",
+          smooth: true,
+          areaStyle: { opacity: 0.3 },
+          data: s0.data,
+        },
+        {
+          name: s1.name || "慢查时长(95%)",
+          type: "line",
+          smooth: true,
+          yAxisIndex: 1,
+          showSymbol: false,
+          areaStyle: { opacity: 0.3 },
+          data: s1.data,
+        },
+      ],
+    } as EChartsOption;
+  } catch {
+    // 拦截器已提示
+  } finally {
+    trendLoading.value = false;
+  }
+}
+
 onMounted(loadInstances);
 </script>
 
@@ -139,6 +201,13 @@ onMounted(loadInstances);
               min-width="140"
               show-overflow-tooltip
             />
+            <el-table-column label="操作" width="90" fixed="right">
+              <template #default="{ row }">
+                <el-button link type="primary" @click="openTrend(row as Record<string, unknown>)">
+                  趋势
+                </el-button>
+              </template>
+            </el-table-column>
           </el-table>
         </el-tab-pane>
         <el-tab-pane label="慢查明细" name="history">
@@ -155,6 +224,12 @@ onMounted(loadInstances);
         </el-tab-pane>
       </el-tabs>
     </el-card>
+
+    <!-- 趋势弹窗 -->
+    <el-dialog v-model="trendVisible" title="慢查历史趋势" width="900px">
+      <div class="trend-title" :title="trendTitle">{{ trendTitle }}</div>
+      <EChart v-loading="trendLoading" :option="trendOption" height="420px" />
+    </el-dialog>
   </div>
 </template>
 
@@ -167,5 +242,14 @@ onMounted(loadInstances);
 
 .filter-card :deep(.el-form-item) {
   margin-bottom: 0;
+}
+
+.trend-title {
+  margin-bottom: 12px;
+  font-size: 13px;
+  color: var(--el-text-color-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 </style>

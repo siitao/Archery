@@ -266,6 +266,16 @@ export function fetchSlowHistory(params: {
     });
 }
 
+/** 慢查趋势数据（GET /api/v1/slowquery/trend/，新 DRF；双 series 慢查次数 + 慢查时长95%） */
+export function fetchSlowTrend(checksum: string, instanceName: string) {
+  return request
+    .get<{ x: string[]; series: { name: string; data: (number | string)[] }[] }>(
+      "/api/v1/slowquery/trend/",
+      { params: { checksum, instance_name: instanceName } }
+    )
+    .then((res) => res.data);
+}
+
 // ============ SchemaSync instance.py ============
 
 export interface SchemaSyncResult {
