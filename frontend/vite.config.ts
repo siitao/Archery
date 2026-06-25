@@ -35,6 +35,8 @@ const proxy = {
   "/sqlworkflow_list_audit/": { target: apiTarget, changeOrigin: true },
   // 数据导出：提交前预检
   "/sqlexport/": { target: apiTarget, changeOrigin: true },
+  // 数据归档（PTArchiver）：list/apply/audit/log/switch/once
+  "/archive/": { target: apiTarget, changeOrigin: true },
 };
 
 // https://vitejs.dev/config/

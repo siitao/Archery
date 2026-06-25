@@ -60,6 +60,30 @@ const routes: RouteRecordRaw[] = [
         meta: { title: "提交导出", perm: "sql.sqlexport_submit" },
       },
       {
+        path: "queryapplylist",
+        name: "queryapplylist",
+        component: () => import("@/views/queryapplylist/Index.vue"),
+        meta: { title: "权限管理", perm: "sql.menu_queryapplylist" },
+      },
+      {
+        path: "queryapplydetail/:id",
+        name: "queryapply-detail",
+        component: () => import("@/views/queryapplydetail/Detail.vue"),
+        meta: { title: "申请详情", perm: "sql.menu_queryapplylist" },
+      },
+      {
+        path: "archive",
+        name: "archive",
+        component: () => import("@/views/archive/Index.vue"),
+        meta: { title: "PTArchiver", perm: "sql.menu_archive" },
+      },
+      {
+        path: "archive/:id",
+        name: "archive-detail",
+        component: () => import("@/views/archive/Detail.vue"),
+        meta: { title: "归档详情", perm: "sql.menu_archive" },
+      },
+      {
         path: "sqlquery",
         name: "sqlquery-index",
         component: () => import("@/views/sqlquery/Index.vue"),

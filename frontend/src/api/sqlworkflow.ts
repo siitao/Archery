@@ -84,11 +84,11 @@ export interface WorkflowLogRow {
   operation_time: string;
 }
 
-/** 工单操作日志（POST /api/v1/workflow/log/，workflow_type=2 表示 SQL 上线） */
-export function fetchWorkflowLogs(workflowId: number) {
+/** 工单操作日志（POST /api/v1/workflow/log/；workflow_type 默认 2=SQL 上线，1=查询权限申请） */
+export function fetchWorkflowLogs(workflowId: number, workflowType: number = 2) {
   return request.post<Paginated<WorkflowLogRow>>("/api/v1/workflow/log/", {
     workflow_id: workflowId,
-    workflow_type: 2,
+    workflow_type: workflowType,
   });
 }
 

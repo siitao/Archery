@@ -34,7 +34,7 @@ export const menuItems: MenuItem[] = [
       { title: "在线查询", perm: "sql.menu_sqlquery", routeName: "sqlquery-index" },
       { title: "数据导出", perm: "sql.menu_sqlexportworkflow", routeName: "sqlexport" },
       { title: "数据字典", perm: "sql.menu_data_dictionary", routeName: "datadictionary" },
-      { title: "权限管理", perm: "sql.menu_queryapplylist", legacyPath: "/queryapplylist/" },
+      { title: "权限管理", perm: "sql.menu_queryapplylist", routeName: "queryapplylist" },
     ],
   },
   {
@@ -64,7 +64,7 @@ export const menuItems: MenuItem[] = [
     icon: "Connection",
     perm: "sql.menu_tools",
     children: [
-      { title: "PTArchiver", perm: "sql.menu_archive", legacyPath: "/archive/" },
+      { title: "PTArchiver", perm: "sql.menu_archive", routeName: "archive" },
       { title: "My2SQL", perm: "sql.menu_my2sql", legacyPath: "/my2sql/" },
       { title: "SchemaSync", perm: "sql.menu_schemasync", routeName: "schemasync" },
     ],
