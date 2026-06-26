@@ -1,7 +1,17 @@
+# ---- 前端构建阶段：Vue3 SPA ----
+FROM node:22-alpine AS frontend
+WORKDIR /app
+COPY frontend/package.json frontend/package-lock.json ./
+RUN npm ci
+COPY frontend/ ./
+RUN npm run build
+
 ARG BASE_IMAGE="hhyo/archery-base:sha-d8159f4"
 FROM ${BASE_IMAGE}
 SHELL ["/bin/bash", "-c"]
 COPY . /opt/archery/
+# 用构建阶段产物覆盖 dist（npm run build 产出）
+COPY --from=frontend /app/dist /opt/archery/frontend/dist
 
 WORKDIR /opt/
 
