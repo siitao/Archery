@@ -820,3 +820,92 @@ class TestWorkflow(APITestCase):
         r = self.client.post("/api/v1/workflow/execute/", execute_data, format="json")
         self.assertEqual(r.status_code, status.HTTP_200_OK)
         self.assertEqual(r.json(), {"msg": "开始执行，执行结果请到工单详情页查看"})
+
+
+class TestSpaEndpoints(TestCase):
+    """SPA 重构新增接口冒烟测试（相关文档 / Dashboard 图表 / 慢查趋势 / 审核参数校验）"""
+
+    def setUp(self) -> None:
+        self.superuser = User.objects.create(
+            username="super", display="超管", is_superuser=True
+        )
+        self.client.force_login(self.superuser)
+
+    def tearDown(self) -> None:
+        self.superuser.delete()
+
+    def test_dbaprinciples_document(self):
+        """相关文档：返回 docs/docs.md 原文 + 标题"""
+        r = self.client.get("/api/v1/document/dbaprinciples/")
+        self.assertEqual(r.status_code, status.HTTP_200_OK)
+        body = r.json()
+        self.assertIn("content", body)
+        self.assertIn("title", body)
+        self.assertTrue(body["content"].lstrip().startswith("#"))
+
+    def test_dashboard_charts(self):
+        """Dashboard 图表数据：10 张图齐全"""
+        with patch("sql_api.api_dashboard.ChartDao") as MockChartDao:
+            dao = MockChartDao.return_value
+            dao.get_date_list.return_value = ["2026-01-01", "2026-01-02"]
+            # 各 by_* 方法返回 {rows: [(label, value), ...]}
+            dao.workflow_by_date.return_value = {"rows": [("2026-01-01", 1)]}
+            dao.workflow_by_group.return_value = {"rows": [("g1", 2)]}
+            dao.syntax_type.return_value = {"rows": [("DDL", 1)]}
+            dao.workflow_by_user.return_value = {"rows": [("u1", 1)]}
+            dao.querylog_effect_row_by_date.return_value = {"rows": [("2026-01-01", 10)]}
+            dao.querylog_count_by_date.return_value = {"rows": [("2026-01-01", 3)]}
+            dao.querylog_effect_row_by_user.return_value = {"rows": [("u1", 10)]}
+            dao.querylog_effect_row_by_db.return_value = {"rows": [("db1", 10)]}
+            dao.slow_query_count_by_db_by_user.return_value = {"rows": [("db1", 1)]}
+            dao.slow_query_count_by_db.return_value = {"rows": [("db1", 1)]}
+            dao.query_sql_prod_bill.return_value = {"rows": [("p1", 1)]}
+            r = self.client.get(
+                "/api/v1/dashboard/charts/?start_date=2026-01-01&end_date=2026-01-02"
+            )
+        self.assertEqual(r.status_code, status.HTTP_200_OK)
+        body = r.json()
+        for key in ["bar1", "bar2", "bar3", "bar5", "pie1", "pie2", "pie3", "pie4", "pie5", "line1"]:
+            self.assertIn(key, body)
+
+    def test_dashboard_charts_bad_date(self):
+        """Dashboard 图表：日期格式错误返回 400"""
+        r = self.client.get(
+            "/api/v1/dashboard/charts/?start_date=not-a-date&end_date=2026-01-02"
+        )
+        self.assertEqual(r.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_slowquery_trend_missing_checksum(self):
+        """慢查趋势：缺 checksum 返回 400"""
+        r = self.client.get("/api/v1/slowquery/trend/")
+        self.assertEqual(r.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_slowquery_trend(self):
+        """慢查趋势：正常返回双 series"""
+        with patch("sql_api.api_slowlog.ChartDao") as MockChartDao:
+            dao = MockChartDao.return_value
+            dao.slow_query_review_history_by_cnt.return_value = {
+                "rows": [(10, "2026-01-01"), (20, "2026-01-02")]
+            }
+            dao.slow_query_review_history_by_pct_95_time.return_value = {
+                "rows": [(0.5, "2026-01-01"), (0.8, "2026-01-02")]
+            }
+            r = self.client.get(
+                "/api/v1/slowquery/trend/?checksum=abc&instance_name=some_ins"
+            )
+        self.assertEqual(r.status_code, status.HTTP_200_OK)
+        body = r.json()
+        self.assertEqual(len(body["x"]), 2)
+        self.assertEqual(len(body["series"]), 2)
+
+    def test_query_priv_audit_param_error(self):
+        """查询权限审核：参数缺失返回 status=1"""
+        r = self.client.post("/api/v1/query_priv/audit/", {}, format="json")
+        self.assertEqual(r.status_code, status.HTTP_200_OK)
+        self.assertEqual(r.json()["status"], 1)
+
+    def test_archive_audit_param_error(self):
+        """归档审核：参数缺失返回 status=1"""
+        r = self.client.post("/api/v1/archive/audit/", {}, format="json")
+        self.assertEqual(r.status_code, status.HTTP_200_OK)
+        self.assertEqual(r.json()["status"], 1)
