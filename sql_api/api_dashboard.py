@@ -59,38 +59,53 @@ class DashboardCharts(views.APIView):
             d = {row[0]: row[1] for row in dao_rows}
             return [d.get(day, 0) for day in date_list]
 
+        def safe(fn, default):
+            """单张图查询独立容错：表不存在/查询失败时返回默认值，不让整个 dashboard 挂掉。
+            例如未配置慢查询功能时 mysql_slow_query_review_history 表不存在。"""
+            try:
+                return fn()
+            except Exception as e:  # noqa: BLE001
+                logger.warning("Dashboard 图表数据查询失败: %s", e)
+                return default
+
+        def bar_from_rows(name, dao_result):
+            rows = dao_result["rows"]
+            return {"x": [r[0] for r in rows], "series": [{"name": name, "data": [r[1] for r in rows]}]}
+
+        EMPTY_BAR = {"x": [], "series": [{"name": "", "data": []}]}
+
         # bar1 SQL 上线数量（按日）
-        bar1 = {
-            "x": date_list,
-            "series": [{"name": "SQL 上线数量", "data": by_date(chart_dao.workflow_by_date(start_date, end_date)["rows"])}],
-        }
+        bar1 = safe(
+            lambda: {"x": date_list, "series": [{"name": "SQL 上线数量", "data": by_date(chart_dao.workflow_by_date(start_date, end_date)["rows"])}]},
+            {"x": date_list, "series": [{"name": "SQL 上线数量", "data": []}]},
+        )
         # pie1 SQL 上线统计（按组）
-        pie1 = _pairs(chart_dao.workflow_by_group(start_date, end_date)["rows"])
+        pie1 = safe(lambda: _pairs(chart_dao.workflow_by_group(start_date, end_date)["rows"]), [])
         # pie2 SQL 语法类型
-        pie2 = _pairs(chart_dao.syntax_type(start_date, end_date)["rows"])
+        pie2 = safe(lambda: _pairs(chart_dao.syntax_type(start_date, end_date)["rows"]), [])
         # bar2 SQL 上线用户
-        bar2_data = chart_dao.workflow_by_user(start_date, end_date)["rows"]
-        bar2 = {"x": [r[0] for r in bar2_data], "series": [{"name": "工单数", "data": [r[1] for r in bar2_data]}]}
+        bar2 = safe(lambda: bar_from_rows("工单数", chart_dao.workflow_by_user(start_date, end_date)), EMPTY_BAR)
         # line1 SQL 查询统计（检索行数 + 检索次数，按日双 series）
-        line1 = {
-            "x": date_list,
-            "series": [
-                {"name": "检索行数", "data": by_date(chart_dao.querylog_effect_row_by_date(start_date, end_date)["rows"])},
-                {"name": "检索次数", "data": by_date(chart_dao.querylog_count_by_date(start_date, end_date)["rows"])},
-            ],
-        }
+        line1 = safe(
+            lambda: {
+                "x": date_list,
+                "series": [
+                    {"name": "检索行数", "data": by_date(chart_dao.querylog_effect_row_by_date(start_date, end_date)["rows"])},
+                    {"name": "检索次数", "data": by_date(chart_dao.querylog_count_by_date(start_date, end_date)["rows"])},
+                ],
+            },
+            {"x": date_list, "series": [{"name": "检索行数", "data": []}, {"name": "检索次数", "data": []}]},
+        )
         # pie4 SQL 查询用户（检索行数）
-        pie4 = _pairs(chart_dao.querylog_effect_row_by_user(start_date, end_date)["rows"])
+        pie4 = safe(lambda: _pairs(chart_dao.querylog_effect_row_by_user(start_date, end_date)["rows"]), [])
         # pie5 DB 检索行数
-        pie5 = _pairs(chart_dao.querylog_effect_row_by_db(start_date, end_date)["rows"])
-        # pie3 慢查询 db/user 维度
-        pie3 = _pairs(chart_dao.slow_query_count_by_db_by_user()["rows"])
-        # bar3 慢查询 db 维度
-        bar3_data = chart_dao.slow_query_count_by_db()["rows"]
-        bar3 = {"x": [r[0] for r in bar3_data], "series": [{"name": "慢查数", "data": [r[1] for r in bar3_data]}]}
+        pie5 = safe(lambda: _pairs(chart_dao.querylog_effect_row_by_db(start_date, end_date)["rows"]), [])
+        # pie3 慢查询 db/user 维度（依赖慢查询表，可能未配置）
+        pie3 = safe(lambda: _pairs(chart_dao.slow_query_count_by_db_by_user()["rows"]), [])
+        # bar3 慢查询 db 维度（依赖慢查询表）
+        bar3 = safe(lambda: bar_from_rows("慢查数", chart_dao.slow_query_count_by_db()), EMPTY_BAR)
         # bar5 SQL 上线工单
-        bar5_data = chart_dao.query_sql_prod_bill(start_date, end_date)["rows"]
-        bar5 = {"x": [r[0] for r in bar5_data], "series": [{"name": "工单数", "data": [r[1] for r in bar5_data]}]}
+        bar5 = safe(lambda: bar_from_rows("工单数", chart_dao.query_sql_prod_bill(start_date, end_date)), EMPTY_BAR)
 
         return Response(
             {

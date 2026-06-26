@@ -875,6 +875,33 @@ class TestSpaEndpoints(TestCase):
         )
         self.assertEqual(r.status_code, status.HTTP_400_BAD_REQUEST)
 
+    def test_dashboard_charts_resilient_to_missing_table(self):
+        """Dashboard 图表：某张图查表失败（如慢查表不存在）不影响其它图，整体仍 200"""
+        with patch("sql_api.api_dashboard.ChartDao") as MockChartDao:
+            dao = MockChartDao.return_value
+            dao.get_date_list.return_value = ["2026-01-01"]
+            dao.workflow_by_date.return_value = {"rows": [("2026-01-01", 1)]}
+            dao.workflow_by_group.return_value = {"rows": [("g1", 2)]}
+            dao.syntax_type.return_value = {"rows": [("DDL", 1)]}
+            dao.workflow_by_user.return_value = {"rows": [("u1", 1)]}
+            dao.querylog_effect_row_by_date.return_value = {"rows": [("2026-01-01", 10)]}
+            dao.querylog_count_by_date.return_value = {"rows": [("2026-01-01", 3)]}
+            dao.querylog_effect_row_by_user.return_value = {"rows": [("u1", 10)]}
+            dao.querylog_effect_row_by_db.return_value = {"rows": [("db1", 10)]}
+            # 慢查询表不存在 → 这两个方法抛异常
+            dao.slow_query_count_by_db_by_user.side_effect = RuntimeError("Table doesn't exist")
+            dao.slow_query_count_by_db.side_effect = RuntimeError("Table doesn't exist")
+            dao.query_sql_prod_bill.return_value = {"rows": [("p1", 1)]}
+            r = self.client.get(
+                "/api/v1/dashboard/charts/?start_date=2026-01-01&end_date=2026-01-01"
+            )
+        self.assertEqual(r.status_code, status.HTTP_200_OK)
+        body = r.json()
+        # 慢查相关的 pie3/bar3 返回空，其它图正常
+        self.assertEqual(body["pie3"], [])
+        self.assertEqual(body["bar3"]["series"][0]["data"], [])
+        self.assertEqual(len(body["pie1"]), 1)
+
     def test_slowquery_trend_missing_checksum(self):
         """慢查趋势：缺 checksum 返回 400"""
         r = self.client.get("/api/v1/slowquery/trend/")
