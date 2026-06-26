@@ -251,6 +251,33 @@ export function grantAccount(params: {
     .then((res) => checkStatus(res.data).data);
 }
 
+/** Mongo 内置角色（db.createUser/updateUser roles） */
+export const MONGO_ROLES = [
+  "read", "readWrite", "dbAdmin", "dbOwner", "userAdmin",
+  "clusterAdmin", "clusterManager", "clusterMonitor", "hostManager",
+  "readAnyDatabase", "readWriteAnyDatabase", "userAdminAnyDatabase",
+  "dbAdminAnyDatabase", "root",
+];
+
+/** Mongo 账号授权（POST /instance/user/grant/，db_name_user=db.user + roles[]） */
+export function grantMongoAccount(params: {
+  instance_id: number;
+  db_name_user: string;
+  roles: string[];
+}) {
+  return request
+    .post<{ status: number; msg: string; data?: unknown }>(
+      "/instance/user/grant/",
+      form({
+        instance_id: params.instance_id,
+        db_name_user: params.db_name_user,
+        "roles[]": params.roles,
+      }),
+      { headers: FORM_HEADERS }
+    )
+    .then((res) => checkStatus(res.data).data);
+}
+
 export function resetPwd(params: {
   instance_id: number;
   user_host: string;

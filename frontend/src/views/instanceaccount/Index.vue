@@ -7,6 +7,8 @@ import {
   createAccount,
   editAccount,
   grantAccount,
+  grantMongoAccount,
+  MONGO_ROLES,
   resetPwd,
   lockAccount,
   deleteAccount,
@@ -123,6 +125,8 @@ async function openGrant(row: AccountRow) {
   if (!currentInstance.value) return;
   grantTarget.user_host = String(row.user_host || `${row.user}@${row.host}`);
   grantTarget.display = grantTarget.user_host;
+  mongoGrantForm.db_name_user = String(row.db_name_user || "");
+  mongoGrantForm.roles = [];
   Object.assign(grantForm, {
     op_type: 0,
     priv_type: currentDbType.value === "mongo" ? 1 : 1,
@@ -134,6 +138,29 @@ async function openGrant(row: AccountRow) {
   grantDialog.value = true;
   if (currentDbType.value !== "mongo") {
     loadGrantDbs();
+  }
+}
+
+// Mongo 授权（角色模型）
+const mongoGrantForm = reactive({ db_name_user: "", roles: [] as string[] });
+
+async function onMongoGrantSubmit() {
+  if (!mongoGrantForm.db_name_user) return ElMessage.warning("缺少账号信息");
+  if (!mongoGrantForm.roles.length) return ElMessage.warning("请选择数据库角色");
+  grantSubmitting.value = true;
+  try {
+    await grantMongoAccount({
+      instance_id: currentInstance.value!.id,
+      db_name_user: mongoGrantForm.db_name_user,
+      roles: mongoGrantForm.roles,
+    });
+    ElMessage.success("授权成功");
+    grantDialog.value = false;
+    loadData();
+  } catch {
+    // 拦截器已提示
+  } finally {
+    grantSubmitting.value = false;
   }
 }
 
@@ -502,8 +529,21 @@ onMounted(() => loadInstances());
         v-else
         type="info"
         :closable="false"
-        title="Mongo 账号授权请通过旧版页面完成（角色模型差异较大，本次未迁移）"
+        :title="`Mongo 账号：${mongoGrantForm.db_name_user}`"
       />
+      <el-form v-if="currentDbType === 'mongo'" label-width="80px">
+        <el-form-item label="角色" required>
+          <el-select
+            v-model="mongoGrantForm.roles"
+            multiple
+            filterable
+            placeholder="请选择数据库角色"
+            style="width: 100%"
+          >
+            <el-option v-for="r in MONGO_ROLES" :key="r" :label="r" :value="r" />
+          </el-select>
+        </el-form-item>
+      </el-form>
       <template #footer>
         <el-button @click="grantDialog = false">取消</el-button>
         <el-button
@@ -511,6 +551,14 @@ onMounted(() => loadInstances());
           type="primary"
           :loading="grantSubmitting"
           @click="onGrantSubmit"
+        >
+          确定
+        </el-button>
+        <el-button
+          v-else
+          type="primary"
+          :loading="grantSubmitting"
+          @click="onMongoGrantSubmit"
         >
           确定
         </el-button>
