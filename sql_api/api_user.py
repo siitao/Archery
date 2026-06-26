@@ -284,6 +284,42 @@ class UserAuth(views.APIView):
         return Response(result)
 
 
+class TwoFAVerifyContext(views.APIView):
+    """2FA 验证上下文：供 SPA 在密码校验通过、临时会话已建立后，
+    查询 verify_mode / 可用验证方式 / 短信手机号。读 request.session（临时会话），
+    不走登录态权限，故 AllowAny（与 /authenticate/ 一致）。
+    """
+
+    permission_classes = [permissions.AllowAny]
+
+    @extend_schema(
+        summary="2FA 验证上下文",
+        description="密码校验通过后，查询 verify_mode / auth_types / phone，供 SPA 渲染 2FA 输入。",
+    )
+    def post(self, request):
+        username = request.session.get("user")
+        if not username:
+            return Response(
+                {"status": 1, "msg": "无 2FA 临时会话，请重新登录"}, status=status.HTTP_400_BAD_REQUEST
+            )
+        verify_mode = request.session.get("verify_mode", "verify_only")
+        configs = TwoFactorAuthConfig.objects.filter(username=username)
+        user_auth_types = [c.auth_type for c in configs]
+        auth_types = []
+        display_map = dict(TwoFactorAuthConfig.auth_type_choice)
+        for t in user_auth_types:
+            auth_types.append({"code": t, "display": display_map.get(t, t)})
+        phone = ""
+        if "sms" in user_auth_types:
+            sms_cfg = TwoFactorAuthConfig.objects.filter(
+                username=username, auth_type="sms"
+            ).first()
+            phone = sms_cfg.phone if sms_cfg else ""
+        return Response(
+            {"status": 0, "msg": "ok", "data": {"verify_mode": verify_mode, "auth_types": auth_types, "phone": phone}}
+        )
+
+
 class TwoFA(views.APIView):
     """
     配置2fa
