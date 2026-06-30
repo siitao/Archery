@@ -822,7 +822,7 @@ class TestWorkflow(APITestCase):
         self.assertEqual(r.json(), {"msg": "开始执行，执行结果请到工单详情页查看"})
 
 
-class TestSpaEndpoints(TestCase):
+class TestSpaEndpoints(APITestCase):
     """SPA 重构新增接口冒烟测试（相关文档 / Dashboard 图表 / 慢查趋势 / 审核参数校验）"""
 
     def setUp(self) -> None:
@@ -956,3 +956,36 @@ class TestSpaEndpoints(TestCase):
         body = r.json()
         self.assertIsInstance(body, list)
         self.assertTrue(all("permissions" in g for g in body))
+
+    def test_aliyun_rds_detail_flow(self):
+        """AliyunRDS 新接口：by_instance 查 + 详情改/删（create 已由 test_create_aliyunrds 覆盖）"""
+        from sql.models import CloudAccessKey, AliyunRdsConfig
+
+        ins = Instance.objects.create(
+            instance_name="rds_ins", type="master", db_type="mysql",
+            host="h", port=3306, user="u", password="p",
+        )
+        # 无配置 → by_instance 404
+        r = self.client.get(f"/api/v1/instance/rds/by_instance/?instance={ins.id}")
+        self.assertEqual(r.status_code, 404)
+        # 直接建配置（create 接口另有 test_create_aliyunrds 覆盖）
+        ak = CloudAccessKey.objects.create(type="aliyun", key_id="kid", key_secret="ksec")
+        rds = AliyunRdsConfig.objects.create(
+            rds_dbinstanceid="rm-xxx", is_enable=True, instance=ins, ak=ak
+        )
+        # by_instance 查得到
+        r = self.client.get(f"/api/v1/instance/rds/by_instance/?instance={ins.id}")
+        self.assertEqual(r.status_code, status.HTTP_200_OK)
+        self.assertEqual(r.json()["rds_dbinstanceid"], "rm-xxx")
+        # 更新
+        up = self.client.put(
+            f"/api/v1/instance/rds/{rds.id}/",
+            {"rds_dbinstanceid": "rm-yyy", "is_enable": False,
+             "ak": {"key_id": "kid2"}},
+            format="json",
+        )
+        self.assertEqual(up.status_code, status.HTTP_200_OK)
+        self.assertEqual(up.json()["rds_dbinstanceid"], "rm-yyy")
+        # 删除
+        d = self.client.delete(f"/api/v1/instance/rds/{rds.id}/")
+        self.assertEqual(d.status_code, status.HTTP_204_NO_CONTENT)

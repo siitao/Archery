@@ -97,3 +97,42 @@ export function updateInstance(id: number, data: Partial<InstanceForm>) {
 export function deleteInstance(id: number) {
   return request.delete(`/api/v1/instance/${id}/`);
 }
+
+// ============ Aliyun RDS（OneToOne 到 Instance） ============
+
+export interface AliyunRdsConfig {
+  id?: number;
+  rds_dbinstanceid: string;
+  is_enable: boolean;
+  instance: number;
+  ak: { id?: number; key_id: string; key_secret: string; remark?: string };
+}
+
+/** 查某实例的 RDS 配置（GET /api/v1/instance/rds/by_instance/?instance=<id>） */
+export function fetchInstanceRds(instanceId: number) {
+  return request
+    .get<AliyunRdsConfig | null>("/api/v1/instance/rds/by_instance/", {
+      params: { instance: instanceId },
+      validateStatus: (s) => s < 500,
+    })
+    .then((r) => (r.status === 404 ? null : r.data))
+    .catch(() => null);
+}
+
+/** 创建 RDS 配置（POST /api/v1/instance/rds/） */
+export function createRds(data: AliyunRdsConfig) {
+  return request.post("/api/v1/instance/rds/", {
+    ...data,
+    ak: { type: "aliyun", ...data.ak },
+  });
+}
+
+/** 更新 RDS 配置（PUT /api/v1/instance/rds/<id>/） */
+export function updateRds(id: number, data: Partial<AliyunRdsConfig>) {
+  return request.put(`/api/v1/instance/rds/${id}/`, data);
+}
+
+/** 删除 RDS 配置（DELETE /api/v1/instance/rds/<id>/） */
+export function deleteRds(id: number) {
+  return request.delete(`/api/v1/instance/rds/${id}/`);
+}

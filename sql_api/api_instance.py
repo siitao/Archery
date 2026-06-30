@@ -180,6 +180,64 @@ class AliyunRdsList(generics.ListAPIView):
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 
+class AliyunRdsDetail(views.APIView):
+    """单个 AliyunRDS 配置：按 pk 查 / 改 / 删。OneToOne 到 Instance。"""
+
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get_object(self, pk):
+        try:
+            return AliyunRdsConfig.objects.get(pk=pk)
+        except AliyunRdsConfig.DoesNotExist:
+            raise Http404
+
+    @extend_schema(summary="AliyunRDS详情", description="按 id 查 RDS 配置。")
+    def get(self, request, pk):
+        obj = self.get_object(pk=pk)
+        return Response(AliyunRdsSerializer(obj).data)
+
+    @extend_schema(
+        summary="更新AliyunRDS",
+        request=AliyunRdsSerializer,
+        description="更新 RDS 配置及其 AccessKey。",
+    )
+    def put(self, request, pk):
+        obj = self.get_object(pk=pk)
+        data = request.data
+        obj.rds_dbinstanceid = data.get("rds_dbinstanceid", obj.rds_dbinstanceid)
+        obj.is_enable = data.get("is_enable", obj.is_enable)
+        ak_data = data.get("ak")
+        if ak_data:
+            obj.ak.key_id = ak_data.get("key_id", obj.ak.key_id)
+            obj.ak.key_secret = ak_data.get("key_secret", obj.ak.key_secret)
+            obj.ak.remark = ak_data.get("remark", obj.ak.remark)
+            obj.ak.save()
+        obj.save()
+        return Response(AliyunRdsSerializer(obj).data)
+
+    @extend_schema(summary="删除AliyunRDS", description="删除 RDS 配置（不含 ak，ak 留存）")
+    def delete(self, request, pk):
+        obj = self.get_object(pk=pk)
+        obj.delete()
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+class AliyunRdsByInstance(views.APIView):
+    """按实例查其 AliyunRDS 配置（OneToOne）。
+    GET /api/v1/instance/rds/by_instance/?instance=<id> → 配置或 404。供 SPA 实例表单回填。"""
+
+    permission_classes = [permissions.IsAuthenticated]
+
+    @extend_schema(summary="按实例查AliyunRDS", description="按 instance_id 查 RDS 配置，无则 404。")
+    def get(self, request):
+        instance_id = request.GET.get("instance")
+        try:
+            obj = AliyunRdsConfig.objects.get(instance_id=instance_id)
+        except AliyunRdsConfig.DoesNotExist:
+            raise Http404
+        return Response(AliyunRdsSerializer(obj).data)
+
+
 class InstanceResource(views.APIView):
     """
     获取实例内的资源信息，database、schema、table、column

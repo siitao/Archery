@@ -10,6 +10,10 @@ import {
   createInstance,
   updateInstance,
   deleteInstance,
+  fetchInstanceRds,
+  createRds,
+  updateRds,
+  deleteRds,
   type InstanceRow,
   type InstanceForm,
   type InstanceTagRow,
@@ -110,6 +114,31 @@ const form = reactive<InstanceForm>({
   tunnel: null,
 });
 
+// Aliyun RDS（可选，OneToOne）
+const rdsEnabled = ref(false);
+const rdsForm = reactive({
+  id: undefined as number | undefined,
+  rds_dbinstanceid: "",
+  is_enable: false,
+  ak_id: undefined as number | undefined,
+  key_id: "",
+  key_secret: "",
+  remark: "",
+});
+
+function resetRds() {
+  Object.assign(rdsForm, {
+    id: undefined,
+    rds_dbinstanceid: "",
+    is_enable: false,
+    ak_id: undefined,
+    key_id: "",
+    key_secret: "",
+    remark: "",
+  });
+  rdsEnabled.value = false;
+}
+
 function resetForm() {
   Object.assign(form, {
     id: undefined,
@@ -133,6 +162,7 @@ function resetForm() {
     instance_tag: [],
     tunnel: null,
   });
+  resetRds();
 }
 
 async function loadOptions() {
@@ -156,7 +186,7 @@ async function openCreate() {
   dialogVisible.value = true;
 }
 
-function openEdit(row: InstanceRow) {
+async function openEdit(row: InstanceRow) {
   isEdit.value = true;
   Object.assign(form, {
     id: row.id,
@@ -181,6 +211,48 @@ function openEdit(row: InstanceRow) {
     tunnel: (row.tunnel as number) || null,
   });
   dialogVisible.value = true;
+  // 回填 Aliyun RDS（如有）
+  resetRds();
+  const rds = await fetchInstanceRds(row.id);
+  if (rds) {
+    rdsEnabled.value = true;
+    Object.assign(rdsForm, {
+      id: rds.id,
+      rds_dbinstanceid: rds.rds_dbinstanceid || "",
+      is_enable: rds.is_enable,
+      ak_id: rds.ak?.id,
+      key_id: rds.ak?.key_id || "",
+      key_secret: rds.ak?.key_secret || "",
+      remark: rds.ak?.remark || "",
+    });
+  }
+}
+
+async function saveRds(instanceId: number) {
+  if (!rdsEnabled.value) {
+    // 未勾选但有旧配置 → 删除
+    if (rdsForm.id) await deleteRds(rdsForm.id).catch(() => {});
+    return;
+  }
+  if (!rdsForm.rds_dbinstanceid.trim() || !rdsForm.key_id.trim() || !rdsForm.key_secret.trim()) {
+    throw new Error("RDS 配置不完整：需填实例ID、AccessKey ID、Secret");
+  }
+  const payload = {
+    rds_dbinstanceid: rdsForm.rds_dbinstanceid.trim(),
+    is_enable: rdsForm.is_enable,
+    instance: instanceId,
+    ak: {
+      id: rdsForm.ak_id,
+      key_id: rdsForm.key_id.trim(),
+      key_secret: rdsForm.key_secret.trim(),
+      remark: rdsForm.remark || "",
+    },
+  };
+  if (rdsForm.id) {
+    await updateRds(rdsForm.id, payload);
+  } else {
+    await createRds(payload);
+  }
 }
 
 async function onSubmit() {
@@ -191,12 +263,20 @@ async function onSubmit() {
     const payload: InstanceForm = { ...form };
     // 编辑且密码留空 → 不传 password（保持原密码）
     if (isEdit.value && !payload.password) delete payload.password;
+    let instanceId = form.id;
     if (isEdit.value && form.id) {
       await updateInstance(form.id, payload);
       ElMessage.success("已更新");
     } else {
-      await createInstance(payload);
+      const { data } = await createInstance(payload);
+      instanceId = data.id;
       ElMessage.success("已新增");
+    }
+    // 保存 Aliyun RDS（编辑用 form.id，新增用返回的 id）
+    try {
+      await saveRds(instanceId as number);
+    } catch (e) {
+      ElMessage.warning(`实例已保存，但 RDS 配置保存失败：${(e as Error).message}`);
     }
     dialogVisible.value = false;
     loadData();
@@ -428,6 +508,42 @@ onMounted(() => {
                 />
               </el-select>
             </el-form-item>
+          </el-col>
+          <el-col :span="24">
+            <el-collapse>
+              <el-collapse-item title="Aliyun RDS 配置（可选）">
+                <el-checkbox v-model="rdsEnabled">该实例是阿里云 RDS</el-checkbox>
+                <template v-if="rdsEnabled">
+                  <el-row :gutter="12" style="margin-top: 12px">
+                    <el-col :span="12">
+                      <el-form-item label="RDS实例ID" label-width="120px">
+                        <el-input v-model="rdsForm.rds_dbinstanceid" />
+                      </el-form-item>
+                    </el-col>
+                    <el-col :span="12">
+                      <el-form-item label="启用" label-width="120px">
+                        <el-switch v-model="rdsForm.is_enable" />
+                      </el-form-item>
+                    </el-col>
+                    <el-col :span="12">
+                      <el-form-item label="AccessKey ID" label-width="120px">
+                        <el-input v-model="rdsForm.key_id" />
+                      </el-form-item>
+                    </el-col>
+                    <el-col :span="12">
+                      <el-form-item label="AccessKey Secret" label-width="120px">
+                        <el-input v-model="rdsForm.key_secret" type="password" show-password />
+                      </el-form-item>
+                    </el-col>
+                    <el-col :span="24">
+                      <el-form-item label="备注" label-width="120px">
+                        <el-input v-model="rdsForm.remark" />
+                      </el-form-item>
+                    </el-col>
+                  </el-row>
+                </template>
+              </el-collapse-item>
+            </el-collapse>
           </el-col>
         </el-row>
       </el-form>

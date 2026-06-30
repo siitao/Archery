@@ -58,6 +58,11 @@ urlpatterns = [
     path("v1/sqlquery/favorites/", api_sqlquery.SQLQueryFavoritesView.as_view()),
     path("v1/instance/tunnel/", api_instance.TunnelList.as_view()),
     path("v1/instance/rds/", api_instance.AliyunRdsList.as_view()),
+    path(
+        "v1/instance/rds/by_instance/",
+        api_instance.AliyunRdsByInstance.as_view(),
+    ),
+    path("v1/instance/rds/<int:pk>/", api_instance.AliyunRdsDetail.as_view()),
     path("v1/workflow/", api_workflow.WorkflowList.as_view()),
     path("v1/workflow/sqlcheck/", api_workflow.ExecuteCheck.as_view()),
     path("v1/workflow/audit/", api_workflow.AuditWorkflow.as_view()),
