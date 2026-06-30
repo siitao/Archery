@@ -109,6 +109,9 @@ function openUrl(url: string) {
             </span>
             <template #dropdown>
               <el-dropdown-menu>
+                <el-dropdown-item v-if="auth.isSuperuser" @click="router.push({ name: 'user' })">
+                  用户管理
+                </el-dropdown-item>
                 <el-dropdown-item v-if="auth.isSuperuser" @click="openUrl(`${legacyBase}/api/debug?full=true`)">
                   系统信息
                 </el-dropdown-item>

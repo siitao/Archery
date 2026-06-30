@@ -79,3 +79,64 @@ export function send2faSms(params: { engineer: string; phone: string }) {
     { headers: { "Content-Type": "application/x-www-form-urlencoded" } }
   );
 }
+
+// ============ 用户管理 CRUD（DRF UserList/UserDetail） ============
+
+export interface UserRow {
+  id: number;
+  username: string;
+  display: string;
+  email: string;
+  is_active: boolean;
+  is_staff: boolean;
+  is_superuser: boolean;
+  groups: number[];
+  user_permissions: number[];
+  resource_group: number[];
+  date_joined?: string;
+  last_login?: string | null;
+}
+
+export interface AuthGroupRow {
+  id: number;
+  name: string;
+}
+export interface PermGroup {
+  model: string;
+  label: string;
+  permissions: { id: number; codename: string; name: string }[];
+}
+
+/** 用户清单（GET /api/v1/user/） */
+export function fetchUsers(params: { page?: number; size?: number; username?: string } = {}) {
+  return request.get<{ count: number; results: UserRow[] }>("/api/v1/user/", { params });
+}
+
+/** 新增用户（POST /api/v1/user/） */
+export function createUser(data: Record<string, unknown>) {
+  return request.post("/api/v1/user/", data);
+}
+
+/** 更新用户（PUT /api/v1/user/<id>/） */
+export function updateUser(id: number, data: Record<string, unknown>) {
+  return request.put(`/api/v1/user/${id}/`, data);
+}
+
+/** 删除用户（DELETE /api/v1/user/<id>/） */
+export function deleteUser(id: number) {
+  return request.delete(`/api/v1/user/${id}/`);
+}
+
+/** 权限组清单（GET /api/v1/user/group/） */
+export function fetchGroups() {
+  return request
+    .get<{ count: number; results: AuthGroupRow[] }>("/api/v1/user/group/", {
+      params: { size: 1000 },
+    })
+    .then((r) => r.data.results || []);
+}
+
+/** 全部权限（GET /api/v1/user/permissions/，按模型分组） */
+export function fetchPermissions() {
+  return request.get<PermGroup[]>("/api/v1/user/permissions/").then((r) => r.data);
+}
