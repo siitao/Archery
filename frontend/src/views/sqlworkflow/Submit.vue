@@ -10,6 +10,7 @@ import {
   type GroupInstanceRow,
 } from "@/api/group";
 import { sqlCheck, submitWorkflow, type ReviewRow } from "@/api/sqlworkflow";
+import { fetchQueryResources } from "@/api/sqlquery";
 import SqlEditor from "@/components/SqlEditor.vue";
 import SqlReviewTable from "@/components/SqlReviewTable.vue";
 import { useBinlogHandoffStore } from "@/stores/binlogHandoff";
@@ -31,6 +32,7 @@ const form = reactive({
 const sqlContent = ref("");
 const groupOptions = ref<ResourceGroupRow[]>([]);
 const instanceOptions = ref<GroupInstanceRow[]>([]);
+const dbOptions = ref<string[]>([]);
 const auditorsDisplay = ref("");
 
 // SQL 检测结果
@@ -55,6 +57,8 @@ watch(
   async (gid) => {
     instanceOptions.value = [];
     form.instance = undefined;
+    dbOptions.value = [];
+    form.db_name = "";
     auditorsDisplay.value = "";
     if (!gid) return;
     const grp = groupOptions.value.find((g) => g.group_id === gid);
@@ -68,6 +72,24 @@ watch(
     try {
       const a = await fetchGroupAuditors(gname);
       auditorsDisplay.value = a.auditors_display || "无需审批";
+    } catch {
+      // 拦截器已提示
+    }
+  }
+);
+
+// 选实例 → 拉数据库列表
+watch(
+  () => form.instance,
+  async (iid) => {
+    dbOptions.value = [];
+    form.db_name = "";
+    if (!iid) return;
+    try {
+      dbOptions.value = await fetchQueryResources({
+        instance_id: iid,
+        resource_type: "database",
+      });
     } catch {
       // 拦截器已提示
     }
@@ -230,11 +252,15 @@ onMounted(() => {
           </el-select>
         </el-form-item>
         <el-form-item label="数据库" required>
-          <el-input
+          <el-select
             v-model="form.db_name"
-            placeholder="目标数据库名"
+            placeholder="请选择数据库"
+            filterable
+            :disabled="!form.instance"
             style="width: 280px"
-          />
+          >
+            <el-option v-for="d in dbOptions" :key="d" :label="d" :value="d" />
+          </el-select>
         </el-form-item>
         <el-form-item label="是否备份">
           <el-switch v-model="form.is_backup" />
