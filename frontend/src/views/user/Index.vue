@@ -7,6 +7,9 @@ import {
   updateUser,
   deleteUser,
   fetchGroups,
+  createGroup,
+  updateGroup,
+  deleteGroup,
   fetchPermissions,
   type UserRow,
   type AuthGroupRow,
@@ -14,6 +17,7 @@ import {
 } from "@/api/user";
 import { fetchResourceGroups, type ResourceGroupRow } from "@/api/group";
 
+const activeTab = ref("user");
 const loading = ref(false);
 const list = ref<UserRow[]>([]);
 const total = ref(0);
@@ -155,6 +159,63 @@ async function onToggleActive(row: UserRow) {
   }
 }
 
+// ============ 权限组管理 ============
+const groupDialogVisible = ref(false);
+const groupIsEdit = ref(false);
+const groupSubmitting = ref(false);
+const groupForm = reactive({ id: undefined as number | undefined, name: "", permissions: [] as number[] });
+
+function openGroupCreate() {
+  groupIsEdit.value = false;
+  Object.assign(groupForm, { id: undefined, name: "", permissions: [] });
+  groupDialogVisible.value = true;
+}
+
+function openGroupEdit(g: AuthGroupRow) {
+  groupIsEdit.value = true;
+  Object.assign(groupForm, { id: g.id, name: g.name, permissions: g.permissions || [] });
+  groupDialogVisible.value = true;
+}
+
+async function onGroupSubmit() {
+  if (!groupForm.name.trim()) return ElMessage.warning("请填写组名");
+  groupSubmitting.value = true;
+  try {
+    if (groupIsEdit.value && groupForm.id) {
+      await updateGroup(groupForm.id, { name: groupForm.name, permissions: groupForm.permissions });
+      ElMessage.success("已更新");
+    } else {
+      await createGroup({ name: groupForm.name, permissions: groupForm.permissions });
+      ElMessage.success("已新增");
+    }
+    groupDialogVisible.value = false;
+    groups.value = await fetchGroups();
+  } catch {
+    // 拦截器已提示
+  } finally {
+    groupSubmitting.value = false;
+  }
+}
+
+async function onGroupDelete(g: AuthGroupRow) {
+  try {
+    await ElMessageBox.confirm(`确认删除权限组「${g.name}」？`, "提示", { type: "warning" });
+    await deleteGroup(g.id);
+    ElMessage.success("已删除");
+    groups.value = await fetchGroups();
+  } catch (e) {
+    if (e !== "cancel") {
+      // 业务错误已由拦截器提示
+    }
+  }
+}
+
+function onTabChange(name: string | number) {
+  if (String(name) === "group" && groups.value.length === 0) {
+    fetchGroups().then((g) => (groups.value = g)).catch(() => {});
+  }
+}
+
 onMounted(async () => {
   loadData();
   try {
@@ -174,6 +235,8 @@ onMounted(async () => {
 
 <template>
   <div class="user-page">
+    <el-tabs v-model="activeTab" @tab-change="onTabChange">
+      <el-tab-pane label="用户" name="user">
     <el-card shadow="never" class="filter-card">
       <el-form :inline="true" @submit.prevent>
         <el-form-item label="用户名">
@@ -322,6 +385,76 @@ onMounted(async () => {
         <el-button @click="dialogVisible = false">取消</el-button>
         <el-button type="primary" :loading="submitting" @click="onSubmit">
           {{ isEdit ? "保存" : "新增" }}
+        </el-button>
+      </template>
+    </el-dialog>
+      </el-tab-pane>
+
+      <!-- 权限组 -->
+      <el-tab-pane label="权限组" name="group">
+        <el-card shadow="never" class="filter-card">
+          <el-form :inline="true" @submit.prevent>
+            <el-form-item>
+              <el-button type="success" @click="openGroupCreate">新增权限组</el-button>
+            </el-form-item>
+          </el-form>
+        </el-card>
+        <el-card shadow="never">
+          <el-table :data="groups" stripe border>
+            <el-table-column prop="id" label="ID" width="70" />
+            <el-table-column prop="name" label="组名" min-width="160" />
+            <el-table-column label="权限数" width="100">
+              <template #default="{ row }">
+                {{ (row as AuthGroupRow).permissions?.length || 0 }}
+              </template>
+            </el-table-column>
+            <el-table-column label="操作" width="130" fixed="right">
+              <template #default="{ row }">
+                <el-button link type="primary" @click="openGroupEdit(row as AuthGroupRow)">编辑</el-button>
+                <el-button link type="danger" @click="onGroupDelete(row as AuthGroupRow)">删除</el-button>
+              </template>
+            </el-table-column>
+          </el-table>
+        </el-card>
+      </el-tab-pane>
+    </el-tabs>
+
+    <!-- 权限组表单弹窗 -->
+    <el-dialog
+      v-model="groupDialogVisible"
+      :title="groupIsEdit ? '编辑权限组' : '新增权限组'"
+      width="720px"
+      :close-on-click-modal="false"
+    >
+      <el-form :model="groupForm" label-width="70px">
+        <el-form-item label="组名" required>
+          <el-input v-model="groupForm.name" />
+        </el-form-item>
+        <el-form-item label="权限">
+          <el-collapse>
+            <el-collapse-item
+              v-for="pg in permGroups"
+              :key="pg.model"
+              :title="`${pg.label}（${pg.permissions.length}）`"
+            >
+              <el-checkbox-group v-model="groupForm.permissions" class="perm-grid">
+                <el-checkbox
+                  v-for="p in pg.permissions"
+                  :key="p.id"
+                  :label="p.codename"
+                  :value="p.id"
+                >
+                  {{ p.codename }}
+                </el-checkbox>
+              </el-checkbox-group>
+            </el-collapse-item>
+          </el-collapse>
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="groupDialogVisible = false">取消</el-button>
+        <el-button type="primary" :loading="groupSubmitting" @click="onGroupSubmit">
+          {{ groupIsEdit ? "保存" : "新增" }}
         </el-button>
       </template>
     </el-dialog>

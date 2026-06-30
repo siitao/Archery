@@ -100,6 +100,7 @@ export interface UserRow {
 export interface AuthGroupRow {
   id: number;
   name: string;
+  permissions: number[];
 }
 export interface PermGroup {
   model: string;
@@ -134,6 +135,21 @@ export function fetchGroups() {
       params: { size: 1000 },
     })
     .then((r) => r.data.results || []);
+}
+
+/** 创建权限组（POST /api/v1/user/group/，可带 permissions） */
+export function createGroup(data: { name: string; permissions?: number[] }) {
+  return request.post("/api/v1/user/group/", data);
+}
+
+/** 更新权限组（PUT /api/v1/user/group/<id>/） */
+export function updateGroup(id: number, data: { name?: string; permissions?: number[] }) {
+  return request.put(`/api/v1/user/group/${id}/`, data);
+}
+
+/** 删除权限组（DELETE /api/v1/user/group/<id>/） */
+export function deleteGroup(id: number) {
+  return request.delete(`/api/v1/user/group/${id}/`);
 }
 
 /** 全部权限（GET /api/v1/user/permissions/，按模型分组） */
