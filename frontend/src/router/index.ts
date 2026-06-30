@@ -96,6 +96,12 @@ const routes: RouteRecordRaw[] = [
         meta: { title: "用户管理" },
       },
       {
+        path: "openapi",
+        name: "openapi",
+        component: () => import("@/views/openapi/Index.vue"),
+        meta: { title: "OpenAPI", perm: "sql.menu_openapi" },
+      },
+      {
         path: "sqlquery",
         name: "sqlquery-index",
         component: () => import("@/views/sqlquery/Index.vue"),

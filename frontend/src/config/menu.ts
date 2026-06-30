@@ -98,6 +98,6 @@ export const menuItems: MenuItem[] = [
     title: "OpenAPI",
     icon: "Promotion",
     perm: "sql.menu_openapi",
-    legacyPath: "/api/swagger/",
+    routeName: "openapi",
   },
 ];
