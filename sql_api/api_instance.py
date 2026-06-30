@@ -16,7 +16,7 @@ from .serializers import (
 )
 from .pagination import CustomizedPagination
 from .filters import InstanceFilter
-from sql.models import Instance, Tunnel, AliyunRdsConfig
+from sql.models import Instance, Tunnel, AliyunRdsConfig, InstanceTag
 from sql.engines import get_engine
 from sql.utils.resource_group import user_instances
 from .table_instance_locator import resolve_table_instances
@@ -24,6 +24,17 @@ from django.http import Http404
 import MySQLdb
 
 logger = logging.getLogger(__name__)
+
+
+class InstanceTagList(views.APIView):
+    """实例标签清单（供实例表单的 instance_tag M2M 选择器使用）。"""
+
+    permission_classes = [permissions.IsAuthenticated]
+
+    @extend_schema(summary="实例标签清单", description="返回全部激活的实例标签。")
+    def get(self, request):
+        rows = InstanceTag.objects.filter(active=1).values("id", "tag_code", "tag_name")
+        return Response(list(rows))
 
 
 class InstanceList(generics.ListAPIView):

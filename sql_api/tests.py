@@ -936,3 +936,23 @@ class TestSpaEndpoints(TestCase):
         r = self.client.post("/api/v1/archive/audit/", {}, format="json")
         self.assertEqual(r.status_code, status.HTTP_200_OK)
         self.assertEqual(r.json()["status"], 1)
+
+    def test_instance_tags_list(self):
+        """实例标签清单"""
+        from sql.models import InstanceTag
+
+        InstanceTag.objects.create(tag_code="can_read", tag_name="支持查询", active=1)
+        InstanceTag.objects.create(tag_code="inactive", tag_name="停用", active=0)
+        r = self.client.get("/api/v1/instance/tags/")
+        self.assertEqual(r.status_code, status.HTTP_200_OK)
+        codes = [t["tag_code"] for t in r.json()]
+        self.assertIn("can_read", codes)
+        self.assertNotIn("inactive", codes)  # 仅激活
+
+    def test_permissions_list(self):
+        """权限清单按模型分组"""
+        r = self.client.get("/api/v1/user/permissions/")
+        self.assertEqual(r.status_code, status.HTTP_200_OK)
+        body = r.json()
+        self.assertIsInstance(body, list)
+        self.assertTrue(all("permissions" in g for g in body))

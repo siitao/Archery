@@ -18,7 +18,7 @@ from .pagination import CustomizedPagination
 from .permissions import IsOwner
 from .filters import UserFilter, ResourceGroupFilter
 from django_redis import get_redis_connection
-from django.contrib.auth.models import Group
+from django.contrib.auth.models import Group, Permission
 from django.contrib.auth import authenticate, login
 from django.conf import settings
 from django.http import Http404
@@ -170,6 +170,29 @@ class GroupDetail(views.APIView):
         group = self.get_object(pk)
         group.delete()
         return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+class PermissionList(views.APIView):
+    """全部权限清单（供用户表单的 user_permissions M2M 选择器使用，按模型分组）。"""
+
+    permission_classes = [permissions.IsAuthenticated]
+
+    @extend_schema(summary="权限清单", description="返回全部权限，按 content_type 分组。")
+    def get(self, request):
+        perms = Permission.objects.select_related("content_type").all()
+        grouped: dict = {}
+        for p in perms:
+            ct = p.content_type
+            key = f"{ct.app_label}.{ct.model}"
+            grouped.setdefault(key, []).append(
+                {"id": p.id, "codename": p.codename, "name": p.name}
+            )
+        return Response(
+            [
+                {"model": k, "label": k, "permissions": v}
+                for k, v in sorted(grouped.items())
+            ]
+        )
 
 
 class ResourceGroupList(generics.ListAPIView):
