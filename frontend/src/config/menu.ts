@@ -74,7 +74,7 @@ export const menuItems: MenuItem[] = [
     icon: "Setting",
     perm: "sql.menu_system",
     children: [
-      { title: "配置项管理", legacyPath: "/config/" },
+      { title: "配置项管理", routeName: "config" },
       { title: "资源组管理", routeName: "resourcegroup" },
     ],
   },

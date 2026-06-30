@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, reactive, onMounted } from "vue";
+import { ref, reactive, computed, onMounted } from "vue";
 import { ElMessage, ElMessageBox } from "element-plus";
 import {
   fetchUsers,
@@ -26,6 +26,78 @@ const query = reactive({ username: "", page: 1, size: 15 });
 const groups = ref<AuthGroupRow[]>([]);
 const permGroups = ref<PermGroup[]>([]);
 const resGroups = ref<ResourceGroupRow[]>([]);
+const permFilter = ref("");
+
+// 过滤后的权限组（根据搜索关键词）
+const filteredPermGroups = computed(() => {
+  if (!permFilter.value.trim()) return permGroups.value;
+  const filter = permFilter.value.toLowerCase();
+  return permGroups.value
+    .map((pg) => ({
+      ...pg,
+      permissions: pg.permissions.filter(
+        (p) =>
+          p.codename.toLowerCase().includes(filter) ||
+          p.name.toLowerCase().includes(filter)
+      ),
+    }))
+    .filter((pg) => pg.permissions.length > 0);
+});
+
+// 全选所有权限
+function selectAllPerms() {
+  groupForm.permissions = permGroups.value.flatMap((pg) =>
+    pg.permissions.map((p) => p.id)
+  );
+}
+
+// 全不选
+function deselectAllPerms() {
+  groupForm.permissions = [];
+}
+
+// 全选某组权限
+function selectGroupPerms(pg: PermGroup) {
+  const ids = pg.permissions.map((p) => p.id);
+  const existing = new Set(groupForm.permissions);
+  ids.forEach((id) => existing.add(id));
+  groupForm.permissions = Array.from(existing);
+}
+
+// 用户权限位（单独的搜索/过滤/全选）
+const userPermFilter = ref("");
+
+const filteredUserPermGroups = computed(() => {
+  if (!userPermFilter.value.trim()) return permGroups.value;
+  const filter = userPermFilter.value.toLowerCase();
+  return permGroups.value
+    .map((pg) => ({
+      ...pg,
+      permissions: pg.permissions.filter(
+        (p) =>
+          p.codename.toLowerCase().includes(filter) ||
+          p.name.toLowerCase().includes(filter)
+      ),
+    }))
+    .filter((pg) => pg.permissions.length > 0);
+});
+
+function selectAllUserPerms() {
+  form.user_permissions = permGroups.value.flatMap((pg) =>
+    pg.permissions.map((p) => p.id)
+  );
+}
+
+function deselectAllUserPerms() {
+  form.user_permissions = [];
+}
+
+function selectGroupUserPerms(pg: PermGroup) {
+  const ids = pg.permissions.map((p) => p.id);
+  const existing = new Set(form.user_permissions);
+  ids.forEach((id) => existing.add(id));
+  form.user_permissions = Array.from(existing);
+}
 
 async function loadData() {
   loading.value = true;
@@ -359,24 +431,51 @@ onMounted(async () => {
           </el-col>
           <el-col :span="24">
             <el-form-item label="权限位">
-              <el-collapse>
-                <el-collapse-item
-                  v-for="pg in permGroups"
-                  :key="pg.model"
-                  :title="`${pg.label}（${pg.permissions.length}）`"
-                >
-                  <el-checkbox-group v-model="form.user_permissions" class="perm-grid">
-                    <el-checkbox
-                      v-for="p in pg.permissions"
-                      :key="p.id"
-                      :label="p.codename"
-                      :value="p.id"
-                    >
-                      {{ p.codename }}
-                    </el-checkbox>
-                  </el-checkbox-group>
-                </el-collapse-item>
-              </el-collapse>
+              <div class="perm-selector">
+                <el-input
+                  v-model="userPermFilter"
+                  placeholder="搜索权限名称..."
+                  clearable
+                  style="margin-bottom: 12px"
+                />
+                <div class="perm-actions">
+                  <el-button size="small" @click="selectAllUserPerms">全选</el-button>
+                  <el-button size="small" @click="deselectAllUserPerms">全不选</el-button>
+                </div>
+                <el-collapse>
+                  <el-collapse-item
+                    v-for="pg in filteredUserPermGroups"
+                    :key="pg.model"
+                    :name="pg.model"
+                  >
+                    <template #title>
+                      <div class="perm-group-header">
+                        <span>{{ pg.label }}（{{ pg.permissions.length }} 个权限）</span>
+                        <el-button
+                          size="small"
+                          type="primary"
+                          link
+                          @click.stop="selectGroupUserPerms(pg)"
+                        >
+                          全选此组
+                        </el-button>
+                      </div>
+                    </template>
+                    <el-checkbox-group v-model="form.user_permissions" class="perm-grid">
+                      <el-checkbox
+                        v-for="p in pg.permissions"
+                        :key="p.id"
+                        :label="p.codename"
+                        :value="p.id"
+                      >
+                        <el-tooltip :content="p.name" placement="top">
+                          <span>{{ p.name }}</span>
+                        </el-tooltip>
+                      </el-checkbox>
+                    </el-checkbox-group>
+                  </el-collapse-item>
+                </el-collapse>
+              </div>
             </el-form-item>
           </el-col>
         </el-row>
@@ -431,24 +530,51 @@ onMounted(async () => {
           <el-input v-model="groupForm.name" />
         </el-form-item>
         <el-form-item label="权限">
-          <el-collapse>
-            <el-collapse-item
-              v-for="pg in permGroups"
-              :key="pg.model"
-              :title="`${pg.label}（${pg.permissions.length}）`"
-            >
-              <el-checkbox-group v-model="groupForm.permissions" class="perm-grid">
-                <el-checkbox
-                  v-for="p in pg.permissions"
-                  :key="p.id"
-                  :label="p.codename"
-                  :value="p.id"
-                >
-                  {{ p.codename }}
-                </el-checkbox>
-              </el-checkbox-group>
-            </el-collapse-item>
-          </el-collapse>
+          <div class="perm-selector">
+            <el-input
+              v-model="permFilter"
+              placeholder="搜索权限名称..."
+              clearable
+              style="margin-bottom: 12px"
+            />
+            <div class="perm-actions">
+              <el-button size="small" @click="selectAllPerms">全选</el-button>
+              <el-button size="small" @click="deselectAllPerms">全不选</el-button>
+            </div>
+            <el-collapse>
+              <el-collapse-item
+                v-for="pg in filteredPermGroups"
+                :key="pg.model"
+                :name="pg.model"
+              >
+                <template #title>
+                  <div class="perm-group-header">
+                    <span>{{ pg.label }}（{{ pg.permissions.length }} 个权限）</span>
+                    <el-button
+                      size="small"
+                      type="primary"
+                      link
+                      @click.stop="selectGroupPerms(pg)"
+                    >
+                      全选此组
+                    </el-button>
+                  </div>
+                </template>
+                <el-checkbox-group v-model="groupForm.permissions" class="perm-grid">
+                  <el-checkbox
+                    v-for="p in pg.permissions"
+                    :key="p.id"
+                    :label="p.codename"
+                    :value="p.id"
+                  >
+                    <el-tooltip :content="p.codename" placement="top">
+                      <span>{{ p.name }}</span>
+                    </el-tooltip>
+                  </el-checkbox>
+                </el-checkbox-group>
+              </el-collapse-item>
+            </el-collapse>
+          </div>
         </el-form-item>
       </el-form>
       <template #footer>
@@ -482,5 +608,27 @@ onMounted(async () => {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
   gap: 4px 12px;
+}
+
+.perm-selector {
+  border: 1px solid var(--el-border-color);
+  border-radius: 4px;
+  padding: 12px;
+  max-height: 400px;
+  overflow-y: auto;
+}
+
+.perm-actions {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.perm-group-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding-right: 12px;
 }
 </style>

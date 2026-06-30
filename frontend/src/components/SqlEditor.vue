@@ -206,6 +206,7 @@ defineExpose({
 
 <style scoped lang="scss">
 .sql-editor-wrap {
+  width: 100%;
   border: 1px solid var(--el-border-color);
   border-radius: 4px;
   overflow: hidden;
