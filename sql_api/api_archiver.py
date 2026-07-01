@@ -14,7 +14,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from common.utils.const import WorkflowAction, WorkflowStatus, WorkflowType
-from common.utils.extend_json_encoder import ExtendJSONEncoder
+from common.utils.extend_json_encoder import encode_json as _encode
 from sql.models import ArchiveConfig, ArchiveLog, Instance, ResourceGroup
 from sql.notify import notify_for_audit
 from sql.utils.resource_group import user_groups, user_instances
@@ -28,10 +28,6 @@ logger = logging.getLogger("default")
 
 
 # ---------- helpers ----------
-
-def _encode(data):
-    return _json.loads(_json.dumps(data, cls=ExtendJSONEncoder, bigint_as_string=True))
-
 
 def _serialize_review_info(review_info):
     """ReviewInfo.nodes → 可 JSON 序列化的列表。"""

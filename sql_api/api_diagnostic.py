@@ -16,7 +16,7 @@ from django.http import JsonResponse
 from rest_framework.permissions import BasePermission, IsAuthenticated
 from rest_framework.views import APIView
 
-from common.utils.extend_json_encoder import ExtendJSONEncoder, ExtendJSONEncoderBytes
+from common.utils.extend_json_encoder import encode_json, encode_json_bytes
 from sql.engines import get_engine
 from sql.services.instance_service import resolve_instance
 
@@ -25,15 +25,7 @@ logger = logging.getLogger("default")
 
 # ---------- shared ----------
 
-def _encode(data):
-    """用 ExtendJSONEncoder 转 JSON-safe dict。"""
-    return json.loads(json.dumps(data, cls=ExtendJSONEncoder, bigint_as_string=True))
-
-
-def _encode_bytes(data):
-    """json 模块版本的 ExtendJSONEncoderBytes（bytes→str）。"""
-    return json.loads(json.dumps(data, cls=ExtendJSONEncoderBytes))
-
+from common.utils.extend_json_encoder import encode_json as _encode, encode_json_bytes as _encode_bytes
 
 # ---------- permissions ----------
 

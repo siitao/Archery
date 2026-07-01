@@ -32,7 +32,7 @@ from django_redis import get_redis_connection
 from rest_framework.permissions import BasePermission, IsAuthenticated
 from rest_framework.views import APIView
 
-from common.utils.extend_json_encoder import ExtendJSONEncoder
+from common.utils.extend_json_encoder import encode_json
 from sql.engines import get_engine, ResultSet
 from sql.models import (
     Instance,
@@ -124,10 +124,6 @@ class ParamEditPermission(BasePermission):
 
 # ========== 账号管理 ==========
 
-def _encode_json(data):
-    """用 ExtendJSONEncoder 序列化（datetime/bigint 等）。"""
-    return _json.loads(_json.dumps(data, cls=ExtendJSONEncoder, bigint_as_string=True))
-
 
 class AccountListView(APIView):
     permission_classes = [IsAuthenticated, AccountPermission]
@@ -166,7 +162,7 @@ class AccountListView(APIView):
             result = {"status": 1, "msg": query_result.error}
 
         query_engine.close()
-        return JsonResponse(_encode_json(result), safe=False)
+        return JsonResponse(encode_json(result), safe=False)
 
 
 class AccountCreateView(APIView):
@@ -526,7 +522,7 @@ class DatabaseListView(APIView):
             result = {"status": 1, "msg": query_result.error}
 
         query_engine.close()
-        return JsonResponse(_encode_json(result), safe=False)
+        return JsonResponse(encode_json(result), safe=False)
 
 
 class DatabaseCreateView(APIView):
@@ -657,7 +653,7 @@ class ParamListView(APIView):
             rows = [r for r in rows if not r["editable"]]
 
         return JsonResponse(
-            _json.loads(_json.dumps(rows, cls=ExtendJSONEncoder, bigint_as_string=True)),
+            encode_json(rows),
             safe=False,
         )
 
@@ -684,12 +680,8 @@ class ParamHistoryView(APIView):
         rows = [row for row in phs]
 
         return JsonResponse(
-            _json.loads(
-                _json.dumps(
-                    {"total": count, "rows": rows},
-                    cls=ExtendJSONEncoder,
-                    bigint_as_string=True,
-                )
+            encode_json(
+                {"total": count, "rows": rows}
             ),
             safe=False,
         )

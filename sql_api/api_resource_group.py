@@ -25,18 +25,12 @@ from rest_framework.permissions import BasePermission, IsAuthenticated
 from rest_framework.views import APIView
 
 from common.utils.convert import Convert
-from common.utils.extend_json_encoder import ExtendJSONEncoder
+from common.utils.extend_json_encoder import encode_json as _encode
 from sql.models import Instance, ResourceGroup, Users
 from sql.services.resource_service import list_user_accessible_instances
 from sql.utils.workflow_audit import Audit
 
 logger = logging.getLogger("default")
-
-
-# ---------- helpers ----------
-
-def _encode(data):
-    return _json.loads(_json.dumps(data, cls=ExtendJSONEncoder, bigint_as_string=True))
 
 
 # ---------- permissions ----------

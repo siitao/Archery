@@ -47,7 +47,7 @@ from django_q.tasks import async_task
 
 from common.config import SysConfig
 from common.utils.const import WorkflowAction, WorkflowStatus, WorkflowType
-from common.utils.extend_json_encoder import ExtendJSONEncoder
+from common.utils.extend_json_encoder import encode_json as _encode
 from common.utils.timer import FuncTimer
 from rest_framework.permissions import BasePermission, IsAuthenticated
 from rest_framework.views import APIView
@@ -68,12 +68,6 @@ from sql.utils.tasks import task_info
 from sql.utils.workflow_audit import Audit, AuditException, get_auditor
 
 logger = logging.getLogger("default")
-
-
-# ---------- helpers ----------
-
-def _encode(data):
-    return _json.loads(_json.dumps(data, cls=ExtendJSONEncoder, bigint_as_string=True))
 
 
 # ---------- permissions ----------

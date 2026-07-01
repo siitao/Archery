@@ -18,7 +18,7 @@ import logging
 from pathlib import Path
 
 from common.config import SysConfig
-from common.utils.extend_json_encoder import ExtendJSONEncoder
+from common.utils.extend_json_encoder import encode_json as _encode
 from django.db.models import F, Max, Sum, Value as V
 from django.db.models.functions import Concat
 from django.http import JsonResponse
@@ -39,12 +39,6 @@ from sql.utils.resource_group import user_instances
 from sql.utils.sql_utils import generate_sql
 
 logger = logging.getLogger("default")
-
-
-# ---------- shared ----------
-
-def _encode(data):
-    return _json.loads(_json.dumps(data, cls=ExtendJSONEncoder, bigint_as_string=True))
 
 
 # ---------- permissions ----------

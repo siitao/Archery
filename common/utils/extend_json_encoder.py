@@ -124,3 +124,16 @@ class ExtendJSONEncoderBytes(json.JSONEncoder):
         except TypeError:
             print(type(obj))
             return super(ExtendJSONEncoderBytes, self).default(obj)
+
+
+def encode_json(data):
+    """用 ExtendJSONEncoder + bigint_as_string 将数据转为 JSON-safe dict。
+    消除跨视图文件中反复出现的 _encode_json 私有函数。"""
+    return json.loads(
+        json.dumps(data, cls=ExtendJSONEncoder, bigint_as_string=True)
+    )
+
+
+def encode_json_bytes(data):
+    """json 模块版本的 ExtendJSONEncoderBytes（bytes→str）。"""
+    return json.loads(json.dumps(data, cls=ExtendJSONEncoderBytes))
