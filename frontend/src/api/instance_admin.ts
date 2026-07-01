@@ -15,39 +15,26 @@ function checkStatus<T extends { status?: number; msg?: string }>(env: T): T {
   return env;
 }
 
-/** 表单编码（旧接口多用 request.POST） */
-function form(obj: Record<string, unknown>) {
-  const f = new URLSearchParams();
-  for (const [k, v] of Object.entries(obj)) {
-    if (v === undefined || v === null) continue;
-    f.append(k, typeof v === "string" ? v : JSON.stringify(v));
-  }
-  return f;
-}
-
-const FORM_HEADERS = { "Content-Type": "application/x-www-form-urlencoded" };
-
 // ============ 会话诊断 db_diagnostic ============
 
 export interface ProcessRow {
   [key: string]: unknown;
 }
 
-/** 进程列表（POST /db_diagnostic/process/，{status,msg,rows}） */
+/** 进程列表（POST /api/v1/diagnostic/process/，{status,msg,rows}） */
 export function fetchProcess(params: {
   instance_name: string;
   command_type?: string;
 } & Record<string, unknown>) {
   return request
     .post<{ status: number; msg: string; rows?: ProcessRow[] }>(
-      "/db_diagnostic/process/",
-      form(params),
-      { headers: FORM_HEADERS }
+      "/api/v1/diagnostic/process/",
+      params,
     )
     .then((res) => checkStatus(res.data).rows || []);
 }
 
-/** Top 表空间（POST /db_diagnostic/tablespace/，{status,msg,rows,total}） */
+/** Top 表空间（POST /api/v1/diagnostic/tablespace/，{status,msg,rows,total}） */
 export function fetchTablespace(params: {
   instance_name: string;
   offset?: number;
@@ -60,31 +47,29 @@ export function fetchTablespace(params: {
       msg: string;
       rows?: ProcessRow[];
       total?: number;
-    }>("/db_diagnostic/tablespace/", form(params), { headers: FORM_HEADERS })
+    }>("/api/v1/diagnostic/tablespace/", params)
     .then((res) => {
       const e = checkStatus(res.data);
       return { rows: e.rows || [], total: e.total || 0 };
     });
 }
 
-/** 事务信息（POST /db_diagnostic/innodb_trx/，{status,msg,rows}） */
+/** 事务信息（POST /api/v1/diagnostic/innodb_trx/，{status,msg,rows}） */
 export function fetchInnodbTrx(instance_name: string) {
   return request
     .post<{ status: number; msg: string; rows?: ProcessRow[] }>(
-      "/db_diagnostic/innodb_trx/",
-      form({ instance_name }),
-      { headers: FORM_HEADERS }
+      "/api/v1/diagnostic/innodb_trx/",
+      { instance_name },
     )
     .then((res) => checkStatus(res.data).rows || []);
 }
 
-/** 锁信息（POST /db_diagnostic/trxandlocks/，{status,msg,rows}） */
+/** 锁信息（POST /api/v1/diagnostic/trxandlocks/，{status,msg,rows}） */
 export function fetchTrxAndLocks(instance_name: string) {
   return request
     .post<{ status: number; msg: string; rows?: ProcessRow[] }>(
-      "/db_diagnostic/trxandlocks/",
-      form({ instance_name }),
-      { headers: FORM_HEADERS }
+      "/api/v1/diagnostic/trxandlocks/",
+      { instance_name },
     )
     .then((res) => checkStatus(res.data).rows || []);
 }
@@ -96,9 +81,8 @@ export function createKillSession(params: {
 }) {
   return request
     .post<{ status: number; msg: string; data?: unknown }>(
-      "/db_diagnostic/create_kill_session/",
-      form({ instance_name: params.instance_name, ThreadIDs: params.ThreadIDs }),
-      { headers: FORM_HEADERS }
+      "/api/v1/diagnostic/create_kill/",
+      { instance_name: params.instance_name, ThreadIDs: params.ThreadIDs },
     )
     .then((res) => checkStatus(res.data).data);
 }
@@ -110,9 +94,8 @@ export function killSession(params: {
 }) {
   return request
     .post<{ status: number; msg: string; data?: unknown }>(
-      "/db_diagnostic/kill_session/",
-      form({ instance_name: params.instance_name, ThreadIDs: params.ThreadIDs }),
-      { headers: FORM_HEADERS }
+      "/api/v1/diagnostic/kill/",
+      { instance_name: params.instance_name, ThreadIDs: params.ThreadIDs },
     )
     .then((res) => checkStatus(res.data).data);
 }

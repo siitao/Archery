@@ -13,7 +13,6 @@ from sql import (
     query,
     slowlog,
     instance,
-    db_diagnostic,
     resource_group,
     binlog,
     archiver,
@@ -80,16 +79,6 @@ urlpatterns = [
     # ---- 实例管理 JSON（已迁至 /api/v1/instance/accounts/、/databases/、/params/） ----
     path("instance/schemasync/", instance.schemasync),
 
-    # ---- 会话诊断 ----
-    path("db_diagnostic/process/", db_diagnostic.process),
-    path(
-        "db_diagnostic/create_kill_session/",
-        db_diagnostic.create_kill_session,
-    ),
-    path("db_diagnostic/kill_session/", db_diagnostic.kill_session),
-    path("db_diagnostic/tablespace/", db_diagnostic.tablespace),
-    path("db_diagnostic/trxandlocks/", db_diagnostic.trxandlocks),
-    path("db_diagnostic/innodb_trx/", db_diagnostic.innodb_trx),
 
     # ---- 实例参数（已迁至 /api/v1/instance/params/） ----
 

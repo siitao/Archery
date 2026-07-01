@@ -11,7 +11,7 @@ from drf_spectacular.views import (
     SpectacularRedocView,
     SpectacularSwaggerView,
 )
-from . import api_user, api_instance, api_workflow, api_sqlquery, api_document, api_query_priv, api_archiver, api_dashboard, api_slowlog, api_config, api_dictionary, api_instance_admin
+from . import api_user, api_instance, api_workflow, api_sqlquery, api_document, api_query_priv, api_archiver, api_dashboard, api_slowlog, api_config, api_dictionary, api_instance_admin, api_diagnostic
 
 router = routers.DefaultRouter()
 router.register(
@@ -112,6 +112,13 @@ urlpatterns = [
     path("v1/instance/params/history/", api_instance_admin.ParamHistoryView.as_view()),
     path("v1/instance/params/edit/", api_instance_admin.ParamEditView.as_view()),
     path("v1/instance/params/compare/", api_instance_admin.ParamCompareView.as_view()),
+    # ---- 会话诊断 ----
+    path("v1/diagnostic/process/", api_diagnostic.ProcessView.as_view()),
+    path("v1/diagnostic/create_kill/", api_diagnostic.CreateKillSessionView.as_view()),
+    path("v1/diagnostic/kill/", api_diagnostic.KillSessionView.as_view()),
+    path("v1/diagnostic/tablespace/", api_diagnostic.TableSpaceView.as_view()),
+    path("v1/diagnostic/trxandlocks/", api_diagnostic.TrxAndLocksView.as_view()),
+    path("v1/diagnostic/innodb_trx/", api_diagnostic.InnodbTrxView.as_view()),
     path("info", views.info),
     path("debug", views.debug),
     path("do_once/mirage", views.mirage),
