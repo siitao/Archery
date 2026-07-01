@@ -11,7 +11,6 @@ from sql import (
     sql_workflow,
     query,
     instance,
-    resource_group,
     binlog,
     archiver,
     audit_log,
@@ -77,14 +76,6 @@ urlpatterns = [
     path("binlog/my2sql/", binlog.my2sql),
     path("binlog/del_log/", binlog.del_binlog),
 
-    # ---- 资源组 JSON ----
-    path("group/addrelation/", resource_group.addrelation),
-    path("group/removerelation/", resource_group.removerelation),
-    path("group/relations/", resource_group.associated_objects),
-    path("group/instances/", resource_group.instances),
-    path("group/unassociated/", resource_group.unassociated_objects),
-    path("group/auditors/", resource_group.auditors),
-    path("group/changeauditors/", resource_group.changeauditors),
 
     # ---- 数据导出预检 ----
     path("sqlexport/pre_check/", views.sqlexport_pre_check),

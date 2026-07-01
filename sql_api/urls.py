@@ -11,7 +11,7 @@ from drf_spectacular.views import (
     SpectacularRedocView,
     SpectacularSwaggerView,
 )
-from . import api_user, api_instance, api_workflow, api_sqlquery, api_document, api_query_priv, api_archiver, api_dashboard, api_slowlog, api_config, api_dictionary, api_instance_admin, api_diagnostic, api_slowquery
+from . import api_user, api_instance, api_workflow, api_sqlquery, api_document, api_query_priv, api_archiver, api_dashboard, api_slowlog, api_config, api_dictionary, api_instance_admin, api_diagnostic, api_slowquery, api_resource_group
 
 router = routers.DefaultRouter()
 router.register(
@@ -130,6 +130,16 @@ urlpatterns = [
     path("v1/optimize/soar/", api_slowquery.OptimizeSoarView.as_view()),
     path("v1/optimize/sqltuning/", api_slowquery.OptimizeSqlTuningView.as_view()),
     path("v1/optimize/explain/", api_slowquery.ExplainSqlView.as_view()),
+    # ---- 资源组管理 ----
+    path("v1/group/list/", api_resource_group.GroupListView.as_view()),
+    path("v1/group/relations/", api_resource_group.RelationsView.as_view()),
+    path("v1/group/unassociated/", api_resource_group.UnassociatedView.as_view()),
+    path("v1/group/instances/", api_resource_group.InstancesView.as_view()),
+    path("v1/group/user_instances/", api_resource_group.UserInstancesView.as_view()),
+    path("v1/group/addrelation/", api_resource_group.AddRelationView.as_view()),
+    path("v1/group/removerelation/", api_resource_group.RemoveRelationView.as_view()),
+    path("v1/group/auditors/", api_resource_group.AuditorsView.as_view()),
+    path("v1/group/changeauditors/", api_resource_group.ChangeAuditorsView.as_view()),
     path("info", views.info),
     path("debug", views.debug),
     path("do_once/mirage", views.mirage),

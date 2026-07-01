@@ -48,7 +48,7 @@ export function deleteResourceGroup(id: number) {
   return request.delete(`/api/v1/user/resourcegroup/${id}/`);
 }
 
-// ============ 关联管理（旧接口） ============
+// ============ 关联管理（新 DRF /api/v1/group/*）============
 
 export interface RelationRow {
   object_type: 0 | 1; // 0=用户 1=实例
@@ -67,18 +67,7 @@ function checkStatus<T extends { status?: number; msg?: string }>(env: T): T {
   return env;
 }
 
-function form(obj: Record<string, unknown>) {
-  const f = new URLSearchParams();
-  for (const [k, v] of Object.entries(obj)) {
-    if (v === undefined || v === null) continue;
-    f.append(k, typeof v === "string" ? v : JSON.stringify(v));
-  }
-  return f;
-}
-
-const FORM_HEADERS = { "Content-Type": "application/x-www-form-urlencoded" };
-
-/** 关联对象列表（POST /group/relations/，{status,total,rows}。limit/offset 必传） */
+/** 关联对象列表（POST /api/v1/group/relations/，{status,total,rows}） */
 export function fetchRelations(params: {
   group_id: number;
   type?: 0 | 1 | "";
@@ -88,15 +77,14 @@ export function fetchRelations(params: {
 }) {
   return request
     .post<{ status: number; msg: string; total?: number; rows?: RelationRow[] }>(
-      "/group/relations/",
-      form({
+      "/api/v1/group/relations/",
+      {
         group_id: params.group_id,
         type: params.type ?? "",
         limit: params.limit ?? 1000,
         offset: params.offset ?? 0,
         search: params.search ?? "",
-      }),
-      { headers: FORM_HEADERS }
+      },
     )
     .then((res) => {
       const e = checkStatus(res.data);
@@ -104,16 +92,15 @@ export function fetchRelations(params: {
     });
 }
 
-/** 未关联对象（POST /group/unassociated/，{status,rows,total}） */
+/** 未关联对象（POST /api/v1/group/unassociated/，{status,rows,total}） */
 export function fetchUnassociated(params: {
   group_id: number;
   object_type: 0 | 1;
 }) {
   return request
     .post<{ status: number; msg: string; rows?: { object_id: number; object_name: string }[]; total?: number }>(
-      "/group/unassociated/",
-      form(params),
-      { headers: FORM_HEADERS }
+      "/api/v1/group/unassociated/",
+      params,
     )
     .then((res) => {
       const e = checkStatus(res.data);
@@ -121,60 +108,53 @@ export function fetchUnassociated(params: {
     });
 }
 
-/** 新增关联（POST /group/addrelation/，object_info 为 ["id,name",...] JSON） */
+/** 新增关联（POST /api/v1/group/addrelation/，object_info 为 ["id,name",...] JSON） */
 export function addRelation(params: {
   group_id: number;
   object_type: 0 | 1;
   object_info: string[];
 }) {
   return request
-    .post<{ status: number; msg: string }>("/group/addrelation/", form(params), {
-      headers: FORM_HEADERS,
-    })
+    .post<{ status: number; msg: string }>("/api/v1/group/addrelation/", params)
     .then((res) => checkStatus(res.data));
 }
 
-/** 移除关联（POST /group/removerelation/，新增接口） */
+/** 移除关联（POST /api/v1/group/removerelation/） */
 export function removeRelation(params: {
   group_id: number;
   object_type: 0 | 1;
   object_info: string[];
 }) {
   return request
-    .post<{ status: number; msg: string }>("/group/removerelation/", form(params), {
-      headers: FORM_HEADERS,
-    })
+    .post<{ status: number; msg: string }>("/api/v1/group/removerelation/", params)
     .then((res) => checkStatus(res.data));
 }
 
-// ============ 审核流配置（旧接口） ============
+// ============ 审核流配置 ============
 
 export interface AuditorsData {
   auditors: string;
   auditors_display: string;
 }
 
-/** 获取审核流（POST /group/auditors/） */
+/** 获取审核流（POST /api/v1/group/auditors/） */
 export function fetchAuditors(group_name: string, workflow_type: number) {
   return request
     .post<{ status: number; msg: string; data?: AuditorsData }>(
-      "/group/auditors/",
-      form({ group_name, workflow_type }),
-      { headers: FORM_HEADERS }
+      "/api/v1/group/auditors/",
+      { group_name, workflow_type },
     )
     .then((res) => checkStatus(res.data).data as AuditorsData);
 }
 
-/** 修改审核流（POST /group/changeauditors/，audit_auth_groups 为逗号分隔的 name） */
+/** 修改审核流（POST /api/v1/group/changeauditors/，audit_auth_groups 为逗号分隔的 name） */
 export function changeAuditors(params: {
   group_name: string;
   audit_auth_groups: string;
   workflow_type: number;
 }) {
   return request
-    .post<{ status: number; msg: string }>("/group/changeauditors/", form(params), {
-      headers: FORM_HEADERS,
-    })
+    .post<{ status: number; msg: string }>("/api/v1/group/changeauditors/", params)
     .then((res) => checkStatus(res.data));
 }
 
