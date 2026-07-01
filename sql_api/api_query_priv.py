@@ -16,7 +16,7 @@ from rest_framework.response import Response
 from common.utils.const import WorkflowAction, WorkflowStatus, WorkflowType
 from sql.models import QueryPrivilegesApply
 from sql.notify import notify_for_audit
-from sql.query_privileges import _query_apply_audit_call_back
+from sql_api.api_misc import _query_apply_audit_call_back
 from sql.utils.resource_group import user_groups
 from sql.utils.workflow_audit import Audit, AuditException, AuditV2, get_auditor
 

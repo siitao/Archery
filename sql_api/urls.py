@@ -11,7 +11,7 @@ from drf_spectacular.views import (
     SpectacularRedocView,
     SpectacularSwaggerView,
 )
-from . import api_user, api_instance, api_workflow, api_sqlquery, api_document, api_query_priv, api_archiver, api_dashboard, api_slowlog, api_config, api_dictionary, api_instance_admin, api_diagnostic, api_slowquery, api_resource_group
+from . import api_user, api_instance, api_workflow, api_sqlquery, api_document, api_query_priv, api_archiver, api_dashboard, api_slowlog, api_config, api_dictionary, api_instance_admin, api_diagnostic, api_slowquery, api_resource_group, api_misc
 
 router = routers.DefaultRouter()
 router.register(
@@ -140,6 +140,33 @@ urlpatterns = [
     path("v1/group/removerelation/", api_resource_group.RemoveRelationView.as_view()),
     path("v1/group/auditors/", api_resource_group.AuditorsView.as_view()),
     path("v1/group/changeauditors/", api_resource_group.ChangeAuditorsView.as_view()),
+    # ---- 审计 ----
+    path("v1/audit/log/", api_misc.AuditLogView.as_view()),
+    path("v1/audit/sqlworkflow/", api_misc.AuditSqlWorkflowView.as_view()),
+    path("v1/audit/querylog/", api_misc.AuditQueryLogView.as_view()),
+    # ---- binlog / my2sql ----
+    path("v1/binlog/list/", api_misc.BinlogListView.as_view()),
+    path("v1/binlog/my2sql/", api_misc.My2sqlView.as_view()),
+    # ---- 查询 / AI ----
+    path("v1/query/generate_sql/", api_misc.GenerateSqlView.as_view()),
+    path("v1/query/check_openai/", api_misc.CheckOpenAIView.as_view()),
+    # ---- 查询权限 ----
+    path("v1/query/applylist/", api_misc.QueryApplyListView.as_view()),
+    path("v1/query/userprivileges/", api_misc.UserPrivilegesView.as_view()),
+    path("v1/query/applyforprivileges/", api_misc.ApplyForPrivilegesView.as_view()),
+    path("v1/query/modifyprivileges/", api_misc.ModifyPrivilegesView.as_view()),
+    # ---- SQL 上线辅助 ----
+    path("v1/sqlworkflow/backup_sql/", api_misc.BackupSqlView.as_view()),
+    path("v1/sqlworkflow/list_audit/", api_misc.AuditSqlWorkflowView.as_view()),
+    path("v1/sqlworkflow/osc_control/", api_misc.OscControlView.as_view()),
+    # ---- SchemaSync ----
+    path("v1/schemasync/", api_misc.SchemaSyncView.as_view()),
+    # ---- 归档 ----
+    path("v1/archive/list/", api_archiver.ArchiveListView.as_view()),
+    path("v1/archive/apply/", api_archiver.ArchiveApplyView.as_view()),
+    path("v1/archive/log/", api_archiver.ArchiveLogView.as_view()),
+    path("v1/archive/switch/", api_archiver.ArchiveSwitchView.as_view()),
+    path("v1/archive/once/", api_archiver.ArchiveOnceView.as_view()),
     path("info", views.info),
     path("debug", views.debug),
     path("do_once/mirage", views.mirage),

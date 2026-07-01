@@ -26,7 +26,7 @@ from sql.models import (
     QueryPrivilegesApply,
 )
 from sql.notify import notify_for_audit, notify_for_execute
-from sql.query_privileges import _query_apply_audit_call_back
+from sql_api.api_misc import _query_apply_audit_call_back
 from sql.utils.resource_group import user_groups
 from sql.utils.sql_review import (
     can_cancel,
