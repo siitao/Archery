@@ -66,6 +66,8 @@ class GoInceptionEngine(EngineBase):
 
     def escape_string(self, value: str) -> str:
         """字符串参数转义"""
+        if value is None:
+            return ""
         return pymysql.escape_string(value)
 
     def execute_check(self, instance=None, db_name=None, sql=""):

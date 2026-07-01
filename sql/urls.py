@@ -6,8 +6,7 @@ from django.views.i18n import JavaScriptCatalog
 import sql.instance_database
 import sql.query_privileges
 import sql.sql_optimize
-from common import auth, config, workflow, dashboard, check
-from common.twofa import totp
+from common import auth, config, check
 from sql import (
     views,
     sql_workflow,
@@ -22,91 +21,66 @@ from sql import (
     data_dictionary,
     archiver,
     audit_log,
-    user,
     offlinedownload,
 )
-from sql.utils import tasks
-from common.utils import ding_api
 
 urlpatterns = [
+    # ---- 根/登录/2FA（保留） ----
     path("", views.index),
-    path("jsi18n/", JavaScriptCatalog.as_view(), name="javascript-catalog"),
     path("index/", views.index),
     path("login/", views.login, name="login"),
     path("login/2fa/", views.twofa, name="twofa"),
     path("logout/", auth.sign_out),
-    path("signup/", auth.sign_up),
-    path("sqlworkflow/", views.sqlworkflow),
-    path("submitsql/", views.submit_sql),
-    path("editsql/", views.submit_sql),
-    path("submitotherinstance/", views.submit_sql),
-    path("detail/<int:workflow_id>/", views.detail, name="detail"),
-    path("downloadfile/", offlinedownload.offline_file_download),
-    path("passed/", sql_workflow.passed),
-    path("execute/", sql_workflow.execute),
-    path("timingtask/", sql_workflow.timing_task),
-    path("alter_run_date/", sql_workflow.alter_run_date),
-    path("cancel/", sql_workflow.cancel),
-    path("rollback/", views.rollback),
-    path("sqlanalyze/", views.sqlanalyze),
-    path("sqlquery/", views.sqlquery),
-    path("slowquery/", views.slowquery),
-    path("sqladvisor/", views.sqladvisor),
-    path("slowquery_advisor/", views.sqladvisor),
-    path("queryapplylist/", views.queryapplylist),
-    path(
-        "queryapplydetail/<int:apply_id>/",
-        views.queryapplydetail,
-        name="queryapplydetail",
-    ),
-    path("queryuserprivileges/", views.queryuserprivileges),
-    path("dbdiagnostic/", views.dbdiagnostic),
-    path("workflow/", views.workflows),
-    path("workflow/<int:audit_id>/", views.workflowsdetail),
-    path("dbaprinciples/", views.dbaprinciples),
-    path("dashboard/", dashboard.pyecharts),
-    path("dashboard/api/", dashboard.DashboardApi),
-    path("group/", views.group),
-    path("grouprelations/<int:group_id>/", views.groupmgmt),
-    path("instance/", views.instance),
-    path("instanceaccount/", views.instanceaccount),
-    path("database/", views.database),
-    path("instanceparam/", views.instance_param),
-    path("paramcompare/", views.param_compare),
-    path("my2sql/", views.my2sql),
-    path("schemasync/", views.schemasync),
-    path("archive/", views.archive),
-    path("archive/<int:id>/", views.archive_detail, name="archive_detail"),
-    path("config/", views.config),
-    path("audit/", views.audit),
-    path("audit_sqlquery/", views.audit_sqlquery),
-    path("audit_sqlworkflow/", views.audit_sqlworkflow),
     path("authenticate/", auth.authenticate_entry),
-    path("sqlworkflow_list/", sql_workflow.sql_workflow_list),
-    path("sqlworkflow_list_audit/", sql_workflow.sql_workflow_list_audit),
-    path("sqlworkflow/detail_content/", sql_workflow.detail_content),
-    path("sqlworkflow/backup_sql/", sql_workflow.backup_sql),
-    path("getWorkflowStatus/", sql_workflow.get_workflow_status),
-    path("del_sqlcronjob/", tasks.del_schedule),
-    path("inception/osc_control/", sql_workflow.osc_control),
-    path("sql_analyze/generate/", sql_analyze.generate),
-    path("sql_analyze/analyze/", sql_analyze.analyze),
-    path("workflow/list/", workflow.lists),
-    path("workflow/log/", workflow.log),
+
+    # ---- 待办列表（SPA header 仍跳 /workflow/） ----
+    path("workflow/", views.workflows),
+
+    # ---- 配置管理（保留后备） ----
+    path("config/", views.config),
     path("config/change/", config.change_config),
     path("check/go_inception/", check.go_inception),
-    path("check/email/", check.email),
-    path("check/instance/", check.instance),
-    path("check/file_storage_connect/", check.file_storage_connect),
-    path("group/group/", resource_group.group),
-    path("group/addrelation/", resource_group.addrelation),
-    path("group/removerelation/", resource_group.removerelation),
-    path("group/relations/", resource_group.associated_objects),
-    path("group/instances/", resource_group.instances),
-    path("group/unassociated/", resource_group.unassociated_objects),
-    path("group/auditors/", resource_group.auditors),
-    path("group/changeauditors/", resource_group.changeauditors),
-    path("instance/list/", instance.lists),
+
+    # ---- 回滚 · 文件下载（SPA 调用） ----
+    path("rollback/", views.rollback_download),
+    path("downloadfile/", offlinedownload.offline_file_download),
+
+    # ---- SQL 上线 JSON（SPA 仍在调用） ----
+    path("sqlworkflow_list_audit/", sql_workflow.sql_workflow_list_audit),
+    path("sqlworkflow/backup_sql/", sql_workflow.backup_sql),
+    path("inception/osc_control/", sql_workflow.osc_control),
+
+    # ---- SQL 分析 / 优化 ----
+    path("sql_analyze/generate/", sql_analyze.generate),
+    path("sql_analyze/analyze/", sql_analyze.analyze),
+    path("query/explain/", sql.sql_optimize.explain),
+    path(
+        "slowquery/optimize_sqladvisor/", sql.sql_optimize.optimize_sqladvisor
+    ),
+    path(
+        "slowquery/optimize_sqltuning/", sql.sql_optimize.optimize_sqltuning
+    ),
+    path("slowquery/optimize_soar/", sql.sql_optimize.optimize_soar),
+
+    # ---- 慢查 JSON ----
+    path("slowquery/review/", slowlog.slowquery_review),
+    path("slowquery/review_history/", slowlog.slowquery_review_history),
+
+    # ---- 查询 / 审计 ----
+    path("query/querylog_audit/", query.querylog_audit),
+    path("query/generate_sql/", query.generate_sql),
+    path("check/openai/", query.check_openai),
+    path("query/applylist/", sql.query_privileges.query_priv_apply_list),
+    path("query/userprivileges/", sql.query_privileges.user_query_priv),
+    path(
+        "query/applyforprivileges/", sql.query_privileges.query_priv_apply
+    ),
+    path(
+        "query/modifyprivileges/", sql.query_privileges.query_priv_modify
+    ),
+    path("audit/log/", audit_log.audit_log),
+
+    # ---- 实例管理 JSON ----
     path("instance/user/list", instance_account.users),
     path("instance/user/create/", instance_account.create),
     path("instance/user/edit/", instance_account.edit),
@@ -118,64 +92,71 @@ urlpatterns = [
     path("instance/database/create/", sql.instance_database.create),
     path("instance/database/edit/", sql.instance_database.edit),
     path("instance/schemasync/", instance.schemasync),
-    path("data_dictionary/", views.data_dictionary),
+
+    # ---- 会话诊断 ----
+    path("db_diagnostic/process/", db_diagnostic.process),
+    path(
+        "db_diagnostic/create_kill_session/",
+        db_diagnostic.create_kill_session,
+    ),
+    path("db_diagnostic/kill_session/", db_diagnostic.kill_session),
+    path("db_diagnostic/tablespace/", db_diagnostic.tablespace),
+    path("db_diagnostic/trxandlocks/", db_diagnostic.trxandlocks),
+    path("db_diagnostic/innodb_trx/", db_diagnostic.innodb_trx),
+
+    # ---- 实例参数 ----
+    path("param/list/", instance.param_list),
+    path("param/history/", instance.param_history),
+    path("param/edit/", instance.param_edit),
+    path("param/compare/", instance.param_compare),
+
+    # ---- 数据字典 ----
     path("data_dictionary/table_list/", data_dictionary.table_list),
     path("data_dictionary/table_info/", data_dictionary.table_info),
     path("data_dictionary/view_list/", data_dictionary.view_list),
     path("data_dictionary/view_info/", data_dictionary.view_info),
     path("data_dictionary/trigger_list/", data_dictionary.trigger_list),
     path("data_dictionary/trigger_info/", data_dictionary.trigger_info),
-    path("data_dictionary/procedure_list/", data_dictionary.procedure_list),
-    path("data_dictionary/procedure_info/", data_dictionary.procedure_info),
-    path("data_dictionary/function_list/", data_dictionary.function_list),
-    path("data_dictionary/function_info/", data_dictionary.function_info),
+    path(
+        "data_dictionary/procedure_list/", data_dictionary.procedure_list
+    ),
+    path(
+        "data_dictionary/procedure_info/", data_dictionary.procedure_info
+    ),
+    path(
+        "data_dictionary/function_list/", data_dictionary.function_list
+    ),
+    path(
+        "data_dictionary/function_info/", data_dictionary.function_info
+    ),
     path("data_dictionary/event_list/", data_dictionary.event_list),
     path("data_dictionary/event_info/", data_dictionary.event_info),
     path("data_dictionary/export/", data_dictionary.export),
-    path("param/list/", instance.param_list),
-    path("param/history/", instance.param_history),
-    path("param/edit/", instance.param_edit),
-    path("param/compare/", instance.param_compare),
-    path("query/querylog_audit/", query.querylog_audit),
-    path("query/generate_sql/", query.generate_sql),
-    path("check/openai/", query.check_openai),
-    path("query/explain/", sql.sql_optimize.explain),
-    path("query/applylist/", sql.query_privileges.query_priv_apply_list),
-    path("query/userprivileges/", sql.query_privileges.user_query_priv),
-    path("query/applyforprivileges/", sql.query_privileges.query_priv_apply),
-    path("query/modifyprivileges/", sql.query_privileges.query_priv_modify),
-    path("query/privaudit/", sql.query_privileges.query_priv_audit),
-    path("binlog/list/", binlog.binlog_list),
-    path("binlog/my2sql/", binlog.my2sql),
-    path("binlog/del_log/", binlog.del_binlog),
-    path("slowquery/review/", slowlog.slowquery_review),
-    path("slowquery/review_history/", slowlog.slowquery_review_history),
-    path("slowquery/optimize_sqladvisor/", sql.sql_optimize.optimize_sqladvisor),
-    path("slowquery/optimize_sqltuning/", sql.sql_optimize.optimize_sqltuning),
-    path("slowquery/optimize_soar/", sql.sql_optimize.optimize_soar),
-    path(
-        "slowquery/optimize_sqltuningadvisor/",
-        sql.sql_optimize.optimize_sqltuningadvisor,
-    ),
-    path("slowquery/report/", slowlog.report),
-    path("db_diagnostic/process/", db_diagnostic.process),
-    path("db_diagnostic/create_kill_session/", db_diagnostic.create_kill_session),
-    path("db_diagnostic/kill_session/", db_diagnostic.kill_session),
-    path("db_diagnostic/tablespace/", db_diagnostic.tablespace),
-    path("db_diagnostic/trxandlocks/", db_diagnostic.trxandlocks),
-    path("db_diagnostic/innodb_trx/", db_diagnostic.innodb_trx),
+
+    # ---- 归档 JSON ----
     path("archive/list/", archiver.archive_list),
     path("archive/apply/", archiver.archive_apply),
-    path("archive/audit/", archiver.archive_audit),
     path("archive/switch/", archiver.archive_switch),
     path("archive/once/", archiver.archive_once),
     path("archive/log/", archiver.archive_log),
-    path("4admin/sync_ding_user/", ding_api.sync_ding_user),
-    path("audit/log/", audit_log.audit_log),
-    path("audit/input/", audit_log.audit_input),
-    path("user/list/", user.lists),
-    path("user/qrcode/<str:data>/", totp.generate_qrcode),
-    path("sqlexportworkflow/", views.sqlexportworkflow),
-    path("sqlexportsubmit/", views.sqlexportsubmit),
+
+    # ---- binlog ----
+    path("binlog/list/", binlog.binlog_list),
+    path("binlog/my2sql/", binlog.my2sql),
+    path("binlog/del_log/", binlog.del_binlog),
+
+    # ---- 资源组 JSON ----
+    path("group/addrelation/", resource_group.addrelation),
+    path("group/removerelation/", resource_group.removerelation),
+    path("group/relations/", resource_group.associated_objects),
+    path("group/instances/", resource_group.instances),
+    path("group/unassociated/", resource_group.unassociated_objects),
+    path("group/auditors/", resource_group.auditors),
+    path("group/changeauditors/", resource_group.changeauditors),
+
+    # ---- 数据导出预检 ----
     path("sqlexport/pre_check/", views.sqlexport_pre_check),
+
+    # ---- Django 内部 ----
+    path("jsi18n/", JavaScriptCatalog.as_view(), name="javascript-catalog"),
 ]

@@ -95,7 +95,7 @@ async function onFormSubmit() {
   }
 }
 
-// ============ 授权（最重） ============
+// ============ 授权（el-tree 选择） ============
 const grantDialog = ref(false);
 const grantTarget = reactive({ user_host: "", display: "" });
 const grantForm = reactive({
@@ -111,15 +111,62 @@ const tbOptions = ref<string[]>([]);
 const colOptions = ref<string[]>([]);
 const grantSubmitting = ref(false);
 
+/** 权限树数据（按级别过滤组） */
 const currentLevelMeta = computed<PrivLevelMeta | undefined>(
-  () =>
-    ({
-      0: MYSQL_PRIVILEGES[0],
-      1: MYSQL_PRIVILEGES[1],
-      2: MYSQL_PRIVILEGES[2],
-      3: MYSQL_PRIVILEGES[3],
-    }[grantForm.priv_type])
+  () => MYSQL_PRIVILEGES[grantForm.priv_type]
 );
+
+const privTreeData = computed(() => {
+  const meta = currentLevelMeta.value;
+  if (!meta) return [];
+  return meta.groups.map((g) => ({
+    id: `group-${meta.level}-${g.group}`,
+    label: g.group,
+    disabled: true,
+    children: g.privs.map((p) => ({ id: p, label: p })),
+  }));
+});
+
+const grantPermFilter = ref("");
+const grantTreeRef = ref<any>(null);
+
+function onGrantTreeCheck() {
+  const checked = grantTreeRef.value?.getCheckedKeys(true) ?? [];
+  grantForm.privs = checked.filter((k: unknown) => typeof k === "string") as string[];
+}
+
+/** 已选权限标签 */
+const grantSelectedPermNames = computed(() => {
+  const set = new Set(grantForm.privs);
+  return (currentLevelMeta.value?.groups ?? []).flatMap((g) =>
+    g.privs.filter((p) => set.has(p))
+  );
+});
+
+function removeGrantPerm(p: string) {
+  grantForm.privs = grantForm.privs.filter((x) => x !== p);
+  grantTreeRef.value?.setCheckedKeys(grantForm.privs);
+}
+
+function selectAllGrantPerms() {
+  const all = (currentLevelMeta.value?.groups ?? []).flatMap((g) => g.privs);
+  grantForm.privs = [...new Set(all)];
+  grantTreeRef.value?.setCheckedKeys(grantForm.privs);
+}
+
+function deselectAllGrantPerms() {
+  grantForm.privs = [];
+  grantTreeRef.value?.setCheckedKeys([]);
+}
+
+watch(grantPermFilter, (val) => {
+  grantTreeRef.value?.filter(val);
+});
+
+function filterGrantPermNode(value: string, data: { label?: string }): boolean {
+  if (!value) return true;
+  return (data.label || "").toLowerCase().includes(value.toLowerCase());
+}
 
 async function openGrant(row: AccountRow) {
   if (!currentInstance.value) return;
@@ -127,6 +174,7 @@ async function openGrant(row: AccountRow) {
   grantTarget.display = grantTarget.user_host;
   mongoGrantForm.db_name_user = String(row.db_name_user || "");
   mongoGrantForm.roles = [];
+  grantPermFilter.value = "";
   Object.assign(grantForm, {
     op_type: 0,
     priv_type: currentDbType.value === "mongo" ? 1 : 1,
@@ -211,20 +259,6 @@ watch(
     }
   }
 );
-
-/** 分组全选切换 */
-function onGroupCheckAll(group: { privs: string[] }, checked: boolean) {
-  if (checked) {
-    const set = new Set(grantForm.privs);
-    group.privs.forEach((p) => set.add(p));
-    grantForm.privs = [...set];
-  } else {
-    grantForm.privs = grantForm.privs.filter((p) => !group.privs.includes(p));
-  }
-}
-function isGroupAllChecked(group: { privs: string[] }) {
-  return group.privs.every((p) => grantForm.privs.includes(p));
-}
 
 async function onGrantSubmit() {
   if (!currentInstance.value) return;
@@ -453,12 +487,13 @@ onMounted(() => loadInstances());
       </template>
     </el-dialog>
 
-    <!-- 授权（配置驱动权限矩阵） -->
+    <!-- 授权（el-tree 选择） -->
     <el-dialog
       v-model="grantDialog"
       :title="`授权 - ${grantTarget.display}`"
       width="780px"
       top="5vh"
+      @closed="grantTreeRef = null"
     >
       <el-form label-width="80px" v-if="currentDbType !== 'mongo'">
         <el-form-item label="操作">
@@ -508,42 +543,71 @@ onMounted(() => loadInstances());
           </el-select>
         </el-form-item>
 
-        <el-divider content-position="left">权限选择</el-divider>
-        <el-checkbox-group v-model="grantForm.privs" class="priv-groups">
-          <div v-for="grp in currentLevelMeta?.groups" :key="grp.group" class="priv-group">
-            <div class="priv-group-head">
-              <el-checkbox
-                :model-value="isGroupAllChecked(grp)"
-                @change="(v) => onGroupCheckAll(grp, !!v)"
+        <!-- 权限树选择 -->
+        <el-form-item label="权限">
+          <div class="perm-selector">
+            <div class="perm-tags">
+              <el-tag
+                v-for="p in grantSelectedPermNames"
+                :key="p"
+                closable
+                size="small"
+                type="info"
+                class="perm-tag"
+                @close="removeGrantPerm(p)"
               >
-                <strong>{{ grp.group }}</strong>
-              </el-checkbox>
+                {{ p }}
+              </el-tag>
+              <span v-if="!grantSelectedPermNames.length" class="muted">未选择权限</span>
             </div>
-            <el-checkbox v-for="p in grp.privs" :key="p" :value="p" :label="p">
-              {{ p }}
-            </el-checkbox>
+            <div class="perm-actions">
+              <el-button size="small" @click="selectAllGrantPerms">全选</el-button>
+              <el-button size="small" @click="deselectAllGrantPerms">全不选</el-button>
+              <el-input
+                v-model="grantPermFilter"
+                placeholder="搜索权限..."
+                clearable
+                size="small"
+                style="width: 200px; margin-left: auto"
+              />
+            </div>
+            <el-tree
+              ref="grantTreeRef"
+              :data="privTreeData"
+              show-checkbox
+              node-key="id"
+              :default-expanded-keys="privTreeData.map((g) => g.id)"
+              :filter-node-method="filterGrantPermNode"
+              :default-checked-keys="grantForm.privs"
+              @check="onGrantTreeCheck"
+            />
           </div>
-        </el-checkbox-group>
-      </el-form>
-      <el-alert
-        v-else
-        type="info"
-        :closable="false"
-        :title="`Mongo 账号：${mongoGrantForm.db_name_user}`"
-      />
-      <el-form v-if="currentDbType === 'mongo'" label-width="80px">
-        <el-form-item label="角色" required>
-          <el-select
-            v-model="mongoGrantForm.roles"
-            multiple
-            filterable
-            placeholder="请选择数据库角色"
-            style="width: 100%"
-          >
-            <el-option v-for="r in MONGO_ROLES" :key="r" :label="r" :value="r" />
-          </el-select>
         </el-form-item>
       </el-form>
+
+      <!-- Mongo 授权 -->
+      <template v-if="currentDbType === 'mongo'">
+        <el-alert
+          type="info"
+          :closable="false"
+          :title="`Mongo 账号：${mongoGrantForm.db_name_user}`"
+          style="margin-bottom: 12px"
+        />
+        <el-form label-width="80px">
+          <el-form-item label="角色" required>
+            <el-select
+              v-model="mongoGrantForm.roles"
+              multiple
+              filterable
+              placeholder="请选择数据库角色"
+              style="width: 100%"
+            >
+              <el-option v-for="r in MONGO_ROLES" :key="r" :label="r" :value="r" />
+            </el-select>
+          </el-form-item>
+        </el-form>
+      </template>
+
       <template #footer>
         <el-button @click="grantDialog = false">取消</el-button>
         <el-button
@@ -594,24 +658,33 @@ onMounted(() => loadInstances());
   margin-bottom: 0;
 }
 
-.priv-groups {
+.perm-selector {
+  border: 1px solid var(--el-border-color);
+  border-radius: 4px;
+  padding: 12px;
+  max-height: 460px;
+  overflow-y: auto;
+  width: 100%;
+}
+
+.perm-tags {
   display: flex;
   flex-wrap: wrap;
-  gap: 16px;
+  gap: 6px;
+  margin-bottom: 12px;
 
-  .priv-group {
-    min-width: 200px;
+  .perm-tag { cursor: pointer; }
 
-    .priv-group-head {
-      margin-bottom: 4px;
-      padding-bottom: 4px;
-      border-bottom: 1px solid var(--el-border-color-lighter);
-    }
-
-    .el-checkbox {
-      display: block;
-      margin-right: 0;
-    }
+  .muted {
+    color: var(--el-text-color-placeholder);
+    font-size: 13px;
   }
+}
+
+.perm-actions {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 12px;
+  align-items: center;
 }
 </style>

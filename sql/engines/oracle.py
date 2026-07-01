@@ -58,6 +58,8 @@ class OracleEngine(EngineBase):
     @staticmethod
     def escape_string(value: str) -> str:
         """Oracle参数转义，防止单引号注入"""
+        if value is None:
+            return ""
         return str(value).replace("'", "''")
 
     @property

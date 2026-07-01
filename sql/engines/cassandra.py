@@ -83,6 +83,8 @@ class CassandraEngine(EngineBase):
         return result
 
     def escape_string(self, value: str) -> str:
+        if value is None:
+            return ""
         return re.sub(r"[; ]", "", value)
 
     def get_all_databases(self, **kwargs):

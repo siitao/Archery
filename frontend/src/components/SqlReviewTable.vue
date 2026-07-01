@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, computed } from "vue";
 import type { ReviewRow } from "@/api/sqlworkflow";
+import TruncateCell from "@/components/TruncateCell.vue";
 
 const props = defineProps<{
   rows: ReviewRow[];
@@ -30,6 +31,10 @@ function rowClass({ row }: { row: ReviewRow }): string {
   return "";
 }
 
+function toRecord(row: ReviewRow): Record<string, unknown> {
+  return row as unknown as Record<string, unknown>;
+}
+
 function levelText(lvl: unknown): string {
   const n = Number(lvl ?? 0);
   return n === 0 ? "正常" : n === 1 ? "警告" : n === 2 ? "错误" : String(lvl);
@@ -46,8 +51,10 @@ function levelText(lvl: unknown): string {
     max-height="520"
   >
     <el-table-column type="index" label="#" width="55" />
-    <el-table-column label="SQL 内容" min-width="320" show-overflow-tooltip>
-      <template #default="{ row }">{{ (row as ReviewRow).sql }}</template>
+    <el-table-column label="SQL 内容" min-width="320">
+      <template #default="{ row }">
+        <TruncateCell :value="(row as ReviewRow).sql" :row="toRecord(row as ReviewRow)" col="sql" />
+      </template>
     </el-table-column>
     <el-table-column label="状态" width="90">
       <template #default="{ row }">{{ levelText((row as ReviewRow).errlevel) }}</template>

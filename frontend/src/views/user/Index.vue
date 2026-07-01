@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, reactive, computed, onMounted } from "vue";
+import { ref, reactive, computed, watch, onMounted } from "vue";
 import { ElMessage, ElMessageBox } from "element-plus";
 import {
   fetchUsers,
@@ -26,79 +26,101 @@ const query = reactive({ username: "", page: 1, size: 15 });
 const groups = ref<AuthGroupRow[]>([]);
 const permGroups = ref<PermGroup[]>([]);
 const resGroups = ref<ResourceGroupRow[]>([]);
-const permFilter = ref("");
 
-// 过滤后的权限组（根据搜索关键词）
-const filteredPermGroups = computed(() => {
-  if (!permFilter.value.trim()) return permGroups.value;
-  const filter = permFilter.value.toLowerCase();
-  return permGroups.value
-    .map((pg) => ({
-      ...pg,
-      permissions: pg.permissions.filter(
-        (p) =>
-          p.codename.toLowerCase().includes(filter) ||
-          p.name.toLowerCase().includes(filter)
-      ),
-    }))
-    .filter((pg) => pg.permissions.length > 0);
-});
+// ── 共用权限树数据 ──
+const permTreeData = computed(() =>
+  permGroups.value.map((pg) => ({
+    id: `group-${pg.model}`,
+    label: `${pg.label}（${pg.permissions.length}）`,
+    disabled: true,
+    children: pg.permissions.map((p) => ({
+      id: p.id,
+      label: p.name,
+      codename: p.codename,
+    })),
+  }))
+);
 
-// 全选所有权限
-function selectAllPerms() {
-  groupForm.permissions = permGroups.value.flatMap((pg) =>
-    pg.permissions.map((p) => p.id)
+function filterPermNode(value: string, data: { label?: string; codename?: string }): boolean {
+  if (!value) return true;
+  const v = value.toLowerCase();
+  return (
+    (data.label || "").toLowerCase().includes(v) ||
+    ((data as any).codename || "").toLowerCase().includes(v)
   );
 }
 
-// 全不选
-function deselectAllPerms() {
-  groupForm.permissions = [];
-}
-
-// 全选某组权限
-function selectGroupPerms(pg: PermGroup) {
-  const ids = pg.permissions.map((p) => p.id);
-  const existing = new Set(groupForm.permissions);
-  ids.forEach((id) => existing.add(id));
-  groupForm.permissions = Array.from(existing);
-}
-
-// 用户权限位（单独的搜索/过滤/全选）
+// ── 用户 tab 权限选择 ──
 const userPermFilter = ref("");
+const userPermTreeRef = ref<any>(null);
 
-const filteredUserPermGroups = computed(() => {
-  if (!userPermFilter.value.trim()) return permGroups.value;
-  const filter = userPermFilter.value.toLowerCase();
-  return permGroups.value
-    .map((pg) => ({
-      ...pg,
-      permissions: pg.permissions.filter(
-        (p) =>
-          p.codename.toLowerCase().includes(filter) ||
-          p.name.toLowerCase().includes(filter)
-      ),
-    }))
-    .filter((pg) => pg.permissions.length > 0);
+const selectedPermNames = computed(() => {
+  const idSet = new Set(form.user_permissions);
+  return permGroups.value.flatMap((pg) =>
+    pg.permissions.filter((p) => idSet.has(p.id)).map((p) => ({ id: p.id, name: p.name, codename: p.codename }))
+  );
 });
+
+function removeUserPerm(permId: number) {
+  form.user_permissions = form.user_permissions.filter((id) => id !== permId);
+  userPermTreeRef.value?.setCheckedKeys(form.user_permissions);
+}
 
 function selectAllUserPerms() {
-  form.user_permissions = permGroups.value.flatMap((pg) =>
-    pg.permissions.map((p) => p.id)
-  );
+  form.user_permissions = permGroups.value.flatMap((pg) => pg.permissions.map((p) => p.id));
+  userPermTreeRef.value?.setCheckedKeys(form.user_permissions);
 }
 
 function deselectAllUserPerms() {
   form.user_permissions = [];
+  userPermTreeRef.value?.setCheckedKeys([]);
 }
 
-function selectGroupUserPerms(pg: PermGroup) {
-  const ids = pg.permissions.map((p) => p.id);
-  const existing = new Set(form.user_permissions);
-  ids.forEach((id) => existing.add(id));
-  form.user_permissions = Array.from(existing);
+function onUserPermTreeCheck() {
+  const checked = userPermTreeRef.value?.getCheckedKeys(false) ?? [];
+  form.user_permissions = checked.filter((k: unknown) => typeof k === "number") as number[];
 }
 
+watch(userPermFilter, (val) => {
+  userPermTreeRef.value?.filter(val);
+});
+
+// ── 权限组 tab 权限选择 ──
+const groupPermFilter = ref("");
+const groupPermTreeRef = ref<any>(null);
+
+const groupSelectedPermNames = computed(() => {
+  const idSet = new Set(groupForm.permissions);
+  return permGroups.value.flatMap((pg) =>
+    pg.permissions.filter((p) => idSet.has(p.id)).map((p) => ({ id: p.id, name: p.name, codename: p.codename }))
+  );
+});
+
+function removeGroupPerm(permId: number) {
+  groupForm.permissions = groupForm.permissions.filter((id) => id !== permId);
+  groupPermTreeRef.value?.setCheckedKeys(groupForm.permissions);
+}
+
+function selectAllPerms() {
+  groupForm.permissions = permGroups.value.flatMap((pg) => pg.permissions.map((p) => p.id));
+  groupPermTreeRef.value?.setCheckedKeys(groupForm.permissions);
+}
+
+function deselectAllPerms() {
+  groupForm.permissions = [];
+  groupPermTreeRef.value?.setCheckedKeys([]);
+}
+
+function onGroupPermTreeCheck() {
+  const checked = groupPermTreeRef.value?.getCheckedKeys(false) ?? [];
+  groupForm.permissions = checked.filter((k: unknown) => typeof k === "number") as number[];
+}
+
+watch(groupPermFilter, (val) => {
+  groupPermTreeRef.value?.filter(val);
+});
+
+// ── 用户 CRUD ──
 async function loadData() {
   loading.value = true;
   try {
@@ -110,7 +132,6 @@ async function loadData() {
     list.value = data.results || [];
     total.value = data.count || 0;
   } catch {
-    // 拦截器已提示
   } finally {
     loading.value = false;
   }
@@ -121,7 +142,6 @@ function onSearch() {
   loadData();
 }
 
-// ============ CRUD ============
 const dialogVisible = ref(false);
 const isEdit = ref(false);
 const submitting = ref(false);
@@ -187,7 +207,6 @@ async function onSubmit() {
   submitting.value = true;
   try {
     const payload: Record<string, unknown> = { ...form };
-    // 编辑且密码留空 → 不传（保持原密码）
     if (isEdit.value && !payload.password) delete payload.password;
     if (isEdit.value && form.id) {
       await updateUser(form.id, payload);
@@ -199,7 +218,6 @@ async function onSubmit() {
     dialogVisible.value = false;
     loadData();
   } catch {
-    // 拦截器已提示
   } finally {
     submitting.value = false;
   }
@@ -207,16 +225,12 @@ async function onSubmit() {
 
 async function onDelete(row: UserRow) {
   try {
-    await ElMessageBox.confirm(`确认删除用户「${row.display || row.username}」？`, "提示", {
-      type: "warning",
-    });
+    await ElMessageBox.confirm(`确认删除用户「${row.display || row.username}」？`, "提示", { type: "warning" });
     await deleteUser(row.id);
     ElMessage.success("已删除");
     loadData();
   } catch (e) {
-    if (e !== "cancel") {
-      // 业务错误已由拦截器提示
-    }
+    if (e !== "cancel") {}
   }
 }
 
@@ -226,12 +240,10 @@ async function onToggleActive(row: UserRow) {
     await updateUser(row.id, { is_active: next });
     row.is_active = next;
     ElMessage.success(next ? "已启用" : "已停用");
-  } catch {
-    // 拦截器已提示
-  }
+  } catch {}
 }
 
-// ============ 权限组管理 ============
+// ── 权限组管理 ──
 const groupDialogVisible = ref(false);
 const groupIsEdit = ref(false);
 const groupSubmitting = ref(false);
@@ -263,7 +275,6 @@ async function onGroupSubmit() {
     groupDialogVisible.value = false;
     groups.value = await fetchGroups();
   } catch {
-    // 拦截器已提示
   } finally {
     groupSubmitting.value = false;
   }
@@ -276,9 +287,7 @@ async function onGroupDelete(g: AuthGroupRow) {
     ElMessage.success("已删除");
     groups.value = await fetchGroups();
   } catch (e) {
-    if (e !== "cancel") {
-      // 业务错误已由拦截器提示
-    }
+    if (e !== "cancel") {}
   }
 }
 
@@ -299,9 +308,7 @@ onMounted(async () => {
     groups.value = g;
     permGroups.value = p;
     resGroups.value = r.data.results || [];
-  } catch {
-    // 拦截器已提示
-  }
+  } catch {}
 });
 </script>
 
@@ -309,184 +316,159 @@ onMounted(async () => {
   <div class="user-page">
     <el-tabs v-model="activeTab" @tab-change="onTabChange">
       <el-tab-pane label="用户" name="user">
-    <el-card shadow="never" class="filter-card">
-      <el-form :inline="true" @submit.prevent>
-        <el-form-item label="用户名">
-          <el-input
-            v-model="query.username"
-            placeholder="精确匹配"
-            clearable
-            @keyup.enter="onSearch"
-          />
-        </el-form-item>
-        <el-form-item>
-          <el-button type="primary" @click="onSearch">查询</el-button>
-          <el-button type="success" @click="openCreate">新增用户</el-button>
-        </el-form-item>
-      </el-form>
-    </el-card>
+        <el-card shadow="never" class="filter-card">
+          <el-form :inline="true" @submit.prevent>
+            <el-form-item label="用户名">
+              <el-input v-model="query.username" placeholder="精确匹配" clearable @keyup.enter="onSearch" />
+            </el-form-item>
+            <el-form-item>
+              <el-button type="primary" @click="onSearch">查询</el-button>
+              <el-button type="success" @click="openCreate">新增用户</el-button>
+            </el-form-item>
+          </el-form>
+        </el-card>
 
-    <el-card shadow="never">
-      <el-table v-loading="loading" :data="list" stripe border>
-        <el-table-column type="index" label="#" width="55" />
-        <el-table-column prop="username" label="用户名" width="130" />
-        <el-table-column prop="display" label="中文名" width="130" />
-        <el-table-column prop="email" label="邮箱" min-width="180" show-overflow-tooltip />
-        <el-table-column label="超管" width="70">
-          <template #default="{ row }">
-            <el-tag v-if="(row as UserRow).is_superuser" type="danger" size="small">是</el-tag>
-            <span v-else>-</span>
-          </template>
-        </el-table-column>
-        <el-table-column label="状态" width="90">
-          <template #default="{ row }">
-            <el-switch
-              :model-value="(row as UserRow).is_active"
-              @change="onToggleActive(row as UserRow)"
+        <el-card shadow="never">
+          <el-table v-loading="loading" :data="list" stripe border>
+            <el-table-column type="index" label="#" width="55" />
+            <el-table-column prop="username" label="用户名" width="130" />
+            <el-table-column prop="display" label="中文名" width="130" />
+            <el-table-column prop="email" label="邮箱" min-width="180" show-overflow-tooltip />
+            <el-table-column label="超管" width="70">
+              <template #default="{ row }">
+                <el-tag v-if="(row as UserRow).is_superuser" type="danger" size="small">是</el-tag>
+                <span v-else>-</span>
+              </template>
+            </el-table-column>
+            <el-table-column label="状态" width="90">
+              <template #default="{ row }">
+                <el-switch :model-value="(row as UserRow).is_active" @change="onToggleActive(row as UserRow)" />
+              </template>
+            </el-table-column>
+            <el-table-column prop="date_joined" label="加入时间" width="160" />
+            <el-table-column label="操作" width="130" fixed="right">
+              <template #default="{ row }">
+                <el-button link type="primary" @click="openEdit(row as UserRow)">编辑</el-button>
+                <el-button link type="danger" @click="onDelete(row as UserRow)">删除</el-button>
+              </template>
+            </el-table-column>
+          </el-table>
+          <div class="pager">
+            <el-pagination
+              :current-page="query.page"
+              :page-size="query.size"
+              :page-sizes="[15, 20, 50, 100]"
+              :total="total"
+              layout="total, sizes, prev, pager, next, jumper"
+              background
+              @current-change="(p: number) => { query.page = p; loadData(); }"
+              @size-change="(s: number) => { query.size = s; query.page = 1; loadData(); }"
             />
-          </template>
-        </el-table-column>
-        <el-table-column prop="date_joined" label="加入时间" width="160" />
-        <el-table-column label="操作" width="130" fixed="right">
-          <template #default="{ row }">
-            <el-button link type="primary" @click="openEdit(row as UserRow)">编辑</el-button>
-            <el-button link type="danger" @click="onDelete(row as UserRow)">删除</el-button>
-          </template>
-        </el-table-column>
-      </el-table>
+          </div>
+        </el-card>
 
-      <div class="pager">
-        <el-pagination
-          :current-page="query.page"
-          :page-size="query.size"
-          :page-sizes="[15, 20, 50, 100]"
-          :total="total"
-          layout="total, sizes, prev, pager, next, jumper"
-          background
-          @current-change="(p: number) => { query.page = p; loadData(); }"
-          @size-change="(s: number) => { query.size = s; query.page = 1; loadData(); }"
-        />
-      </div>
-    </el-card>
-
-    <!-- 用户表单弹窗 -->
-    <el-dialog
-      v-model="dialogVisible"
-      :title="isEdit ? '编辑用户' : '新增用户'"
-      width="780px"
-      :close-on-click-modal="false"
-    >
-      <el-form :model="form" label-width="90px">
-        <el-row :gutter="12">
-          <el-col :span="12">
-            <el-form-item label="用户名" required>
-              <el-input v-model="form.username" :disabled="isEdit" />
-            </el-form-item>
-          </el-col>
-          <el-col :span="12">
-            <el-form-item label="中文名" required>
-              <el-input v-model="form.display" />
-            </el-form-item>
-          </el-col>
-          <el-col :span="12">
-            <el-form-item label="邮箱">
-              <el-input v-model="form.email" />
-            </el-form-item>
-          </el-col>
-          <el-col :span="12">
-            <el-form-item label="密码" :required="!isEdit">
-              <el-input
-                v-model="form.password"
-                type="password"
-                show-password
-                :placeholder="isEdit ? '留空表示不修改' : ''"
-              />
-            </el-form-item>
-          </el-col>
-          <el-col :span="24">
-            <el-form-item label="角色标志">
-              <el-checkbox v-model="form.is_active">启用</el-checkbox>
-              <el-checkbox v-model="form.is_staff">可登录后台</el-checkbox>
-              <el-checkbox v-model="form.is_superuser">超级管理员</el-checkbox>
-            </el-form-item>
-          </el-col>
-          <el-col :span="12">
-            <el-form-item label="权限组">
-              <el-select v-model="form.groups" multiple filterable placeholder="可多选" style="width: 100%">
-                <el-option v-for="g in groups" :key="g.id" :label="g.name" :value="g.id" />
-              </el-select>
-            </el-form-item>
-          </el-col>
-          <el-col :span="12">
-            <el-form-item label="资源组">
-              <el-select v-model="form.resource_group" multiple filterable placeholder="可多选" style="width: 100%">
-                <el-option
-                  v-for="g in resGroups"
-                  :key="g.group_id"
-                  :label="g.group_name"
-                  :value="g.group_id"
-                />
-              </el-select>
-            </el-form-item>
-          </el-col>
-          <el-col :span="24">
-            <el-form-item label="权限位">
-              <div class="perm-selector">
-                <el-input
-                  v-model="userPermFilter"
-                  placeholder="搜索权限名称..."
-                  clearable
-                  style="margin-bottom: 12px"
-                />
-                <div class="perm-actions">
-                  <el-button size="small" @click="selectAllUserPerms">全选</el-button>
-                  <el-button size="small" @click="deselectAllUserPerms">全不选</el-button>
-                </div>
-                <el-collapse>
-                  <el-collapse-item
-                    v-for="pg in filteredUserPermGroups"
-                    :key="pg.model"
-                    :name="pg.model"
-                  >
-                    <template #title>
-                      <div class="perm-group-header">
-                        <span>{{ pg.label }}（{{ pg.permissions.length }} 个权限）</span>
-                        <el-button
-                          size="small"
-                          type="primary"
-                          link
-                          @click.stop="selectGroupUserPerms(pg)"
-                        >
-                          全选此组
-                        </el-button>
-                      </div>
-                    </template>
-                    <el-checkbox-group v-model="form.user_permissions" class="perm-grid">
-                      <el-checkbox
-                        v-for="p in pg.permissions"
+        <!-- 用户表单弹窗 -->
+        <el-dialog
+          v-model="dialogVisible"
+          :title="isEdit ? '编辑用户' : '新增用户'"
+          width="780px"
+          :close-on-click-modal="false"
+        >
+          <el-form :model="form" label-width="90px">
+            <el-row :gutter="12">
+              <el-col :span="12">
+                <el-form-item label="用户名" required>
+                  <el-input v-model="form.username" :disabled="isEdit" />
+                </el-form-item>
+              </el-col>
+              <el-col :span="12">
+                <el-form-item label="中文名" required>
+                  <el-input v-model="form.display" />
+                </el-form-item>
+              </el-col>
+              <el-col :span="12">
+                <el-form-item label="邮箱">
+                  <el-input v-model="form.email" />
+                </el-form-item>
+              </el-col>
+              <el-col :span="12">
+                <el-form-item label="密码" :required="!isEdit">
+                  <el-input v-model="form.password" type="password" show-password :placeholder="isEdit ? '留空表示不修改' : ''" />
+                </el-form-item>
+              </el-col>
+              <el-col :span="24">
+                <el-form-item label="角色标志">
+                  <el-checkbox v-model="form.is_active">启用</el-checkbox>
+                  <el-checkbox v-model="form.is_staff">可登录后台</el-checkbox>
+                  <el-checkbox v-model="form.is_superuser">超级管理员</el-checkbox>
+                </el-form-item>
+              </el-col>
+              <el-col :span="12">
+                <el-form-item label="权限组">
+                  <el-select v-model="form.groups" multiple filterable placeholder="可多选" style="width: 100%">
+                    <el-option v-for="g in groups" :key="g.id" :label="g.name" :value="g.id" />
+                  </el-select>
+                </el-form-item>
+              </el-col>
+              <el-col :span="12">
+                <el-form-item label="资源组">
+                  <el-select v-model="form.resource_group" multiple filterable placeholder="可多选" style="width: 100%">
+                    <el-option v-for="g in resGroups" :key="g.group_id" :label="g.group_name" :value="g.group_id" />
+                  </el-select>
+                </el-form-item>
+              </el-col>
+              <el-col :span="24">
+                <el-form-item label="权限位">
+                  <div class="perm-selector">
+                    <div class="perm-tags">
+                      <el-tag
+                        v-for="p in selectedPermNames"
                         :key="p.id"
-                        :label="p.codename"
-                        :value="p.id"
+                        closable
+                        size="small"
+                        type="info"
+                        class="perm-tag"
+                        @close="removeUserPerm(p.id)"
                       >
-                        <el-tooltip :content="p.name" placement="top">
+                        <el-tooltip :content="p.codename" placement="top">
                           <span>{{ p.name }}</span>
                         </el-tooltip>
-                      </el-checkbox>
-                    </el-checkbox-group>
-                  </el-collapse-item>
-                </el-collapse>
-              </div>
-            </el-form-item>
-          </el-col>
-        </el-row>
-      </el-form>
-      <template #footer>
-        <el-button @click="dialogVisible = false">取消</el-button>
-        <el-button type="primary" :loading="submitting" @click="onSubmit">
-          {{ isEdit ? "保存" : "新增" }}
-        </el-button>
-      </template>
-    </el-dialog>
+                      </el-tag>
+                      <span v-if="!selectedPermNames.length" class="muted">未选择权限</span>
+                    </div>
+                    <div class="perm-actions">
+                      <el-button size="small" @click="selectAllUserPerms">全选</el-button>
+                      <el-button size="small" @click="deselectAllUserPerms">全不选</el-button>
+                      <el-input
+                        v-model="userPermFilter"
+                        placeholder="搜索权限..."
+                        clearable
+                        size="small"
+                        style="width: 200px; margin-left: auto"
+                      />
+                    </div>
+                    <el-tree
+                      ref="userPermTreeRef"
+                      :data="permTreeData"
+                      show-checkbox
+                      node-key="id"
+                      :default-expanded-keys="permGroups.map((pg) => 'group-' + pg.model)"
+                      :filter-node-method="filterPermNode"
+                      :default-checked-keys="form.user_permissions"
+                      @check="onUserPermTreeCheck"
+                    />
+                  </div>
+                </el-form-item>
+              </el-col>
+            </el-row>
+          </el-form>
+          <template #footer>
+            <el-button @click="dialogVisible = false">取消</el-button>
+            <el-button type="primary" :loading="submitting" @click="onSubmit">
+              {{ isEdit ? "保存" : "新增" }}
+            </el-button>
+          </template>
+        </el-dialog>
       </el-tab-pane>
 
       <!-- 权限组 -->
@@ -531,49 +513,43 @@ onMounted(async () => {
         </el-form-item>
         <el-form-item label="权限">
           <div class="perm-selector">
-            <el-input
-              v-model="permFilter"
-              placeholder="搜索权限名称..."
-              clearable
-              style="margin-bottom: 12px"
-            />
+            <div class="perm-tags">
+              <el-tag
+                v-for="p in groupSelectedPermNames"
+                :key="p.id"
+                closable
+                size="small"
+                type="info"
+                class="perm-tag"
+                @close="removeGroupPerm(p.id)"
+              >
+                <el-tooltip :content="p.codename" placement="top">
+                  <span>{{ p.name }}</span>
+                </el-tooltip>
+              </el-tag>
+              <span v-if="!groupSelectedPermNames.length" class="muted">未选择权限</span>
+            </div>
             <div class="perm-actions">
               <el-button size="small" @click="selectAllPerms">全选</el-button>
               <el-button size="small" @click="deselectAllPerms">全不选</el-button>
+              <el-input
+                v-model="groupPermFilter"
+                placeholder="搜索权限..."
+                clearable
+                size="small"
+                style="width: 200px; margin-left: auto"
+              />
             </div>
-            <el-collapse>
-              <el-collapse-item
-                v-for="pg in filteredPermGroups"
-                :key="pg.model"
-                :name="pg.model"
-              >
-                <template #title>
-                  <div class="perm-group-header">
-                    <span>{{ pg.label }}（{{ pg.permissions.length }} 个权限）</span>
-                    <el-button
-                      size="small"
-                      type="primary"
-                      link
-                      @click.stop="selectGroupPerms(pg)"
-                    >
-                      全选此组
-                    </el-button>
-                  </div>
-                </template>
-                <el-checkbox-group v-model="groupForm.permissions" class="perm-grid">
-                  <el-checkbox
-                    v-for="p in pg.permissions"
-                    :key="p.id"
-                    :label="p.codename"
-                    :value="p.id"
-                  >
-                    <el-tooltip :content="p.codename" placement="top">
-                      <span>{{ p.name }}</span>
-                    </el-tooltip>
-                  </el-checkbox>
-                </el-checkbox-group>
-              </el-collapse-item>
-            </el-collapse>
+            <el-tree
+              ref="groupPermTreeRef"
+              :data="permTreeData"
+              show-checkbox
+              node-key="id"
+              :default-expanded-keys="permGroups.map((pg) => 'group-' + pg.model)"
+              :filter-node-method="filterPermNode"
+              :default-checked-keys="groupForm.permissions"
+              @check="onGroupPermTreeCheck"
+            />
           </div>
         </el-form-item>
       </el-form>
@@ -604,17 +580,25 @@ onMounted(async () => {
   justify-content: flex-end;
 }
 
-.perm-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
-  gap: 4px 12px;
+.perm-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 12px;
+
+  .perm-tag { cursor: pointer; }
+
+  .muted {
+    color: var(--el-text-color-placeholder);
+    font-size: 13px;
+  }
 }
 
 .perm-selector {
   border: 1px solid var(--el-border-color);
   border-radius: 4px;
   padding: 12px;
-  max-height: 400px;
+  max-height: 480px;
   overflow-y: auto;
 }
 
@@ -622,13 +606,6 @@ onMounted(async () => {
   display: flex;
   gap: 8px;
   margin-bottom: 12px;
-}
-
-.perm-group-header {
-  display: flex;
   align-items: center;
-  justify-content: space-between;
-  width: 100%;
-  padding-right: 12px;
 }
 </style>

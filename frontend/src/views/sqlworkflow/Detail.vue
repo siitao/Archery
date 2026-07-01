@@ -99,6 +99,10 @@ function parseRows(jsonStr?: string): ReviewRow[] {
   if (!jsonStr) return [];
   try {
     const obj = JSON.parse(jsonStr);
+    // Direct array format (from ReviewSet.json() / DRF serializer)
+    if (Array.isArray(obj)) {
+      return obj as ReviewRow[];
+    }
     const rows = obj?.rows ?? obj?.data ?? [];
     if (Array.isArray(rows) && rows.length && Array.isArray(rows[0])) {
       const cols: string[] = obj?.column_list ?? [];

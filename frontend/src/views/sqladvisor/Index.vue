@@ -10,6 +10,7 @@ import {
   optimizeSqlTuning,
   explainSql,
 } from "@/api/phase2";
+import TruncateCell from "@/components/TruncateCell.vue";
 
 const { instanceName, instanceGroups, currentInstance, loadInstances } =
   useInstanceSelect();
@@ -31,6 +32,13 @@ const tools: { key: OptTool; label: string }[] = [
   { key: "tuning", label: "MySQL 调优" },
   { key: "explain", label: "执行计划" },
 ];
+
+/** SQL 长文本列名集合 */
+const SQL_COLUMNS = new Set(["sql", "query", "info", "detail", "plan", "suggestion"]);
+
+function isSqlColumn(col: string): boolean {
+  return SQL_COLUMNS.has(col.toLowerCase());
+}
 
 async function loadDbs() {
   if (!currentInstance.value) return;
@@ -141,9 +149,12 @@ onMounted(loadInstances);
           :prop="String(idx)"
           :label="col"
           min-width="140"
-          show-overflow-tooltip
+          :show-overflow-tooltip="!isSqlColumn(col)"
         >
-          <template #default="{ row }">{{ (row as unknown[])[idx] }}</template>
+          <template v-if="isSqlColumn(col)" #default="{ row }">
+            <TruncateCell :value="String((row as unknown[])[idx])" :row="row as unknown as Record<string,unknown>" :col="col" />
+          </template>
+          <template v-else #default="{ row }">{{ (row as unknown[])[idx] }}</template>
         </el-table-column>
       </el-table>
     </el-card>

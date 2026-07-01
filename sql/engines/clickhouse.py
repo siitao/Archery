@@ -47,6 +47,8 @@ class ClickHouseEngine(EngineBase):
 
     def escape_string(self, value: str) -> str:
         """字符串参数转义"""
+        if value is None:
+            return ""
         return "%s" % "".join(escape_chars_map.get(c, c) for c in value)
 
     @property

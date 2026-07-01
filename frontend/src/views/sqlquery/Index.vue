@@ -21,6 +21,7 @@ import {
 import SqlEditor from "@/components/SqlEditor.vue";
 import SqlQueryResultTable from "@/components/SqlQueryResultTable.vue";
 import type { SqlCompleters } from "@/components/SqlEditor.vue";
+import TruncateCell from "@/components/TruncateCell.vue";
 
 const auth = useAuthStore();
 
@@ -472,7 +473,6 @@ onMounted(() => {
             :key="p"
             v-model="paramValues[p]"
             :placeholder="p"
-            size="small"
             class="param-input"
           />
         </div>
@@ -481,7 +481,7 @@ onMounted(() => {
       <!-- 右：控制栏 -->
       <el-col :span="6">
         <el-card shadow="never" body-class="control-body" class="control-card">
-          <el-form label-width="72px" size="small">
+          <el-form label-width="72px">
             <el-form-item label="表名定位">
               <el-input
                 v-model="locatorKeyword"
@@ -608,7 +608,6 @@ onMounted(() => {
             <el-button
               type="primary"
               plain
-              size="small"
               class="ai-btn"
               :loading="aiLoading"
               @click="onAiGenerate"
@@ -637,13 +636,11 @@ onMounted(() => {
               v-model="logQuery.search"
               placeholder="搜索 SQL / 用户 / 别名"
               clearable
-              size="small"
               class="log-search"
               @keyup.enter="onLogSearch"
             />
             <el-select
               v-model="logQuery.star"
-              size="small"
               class="log-star"
               @change="onLogSearch"
             >
@@ -651,14 +648,13 @@ onMounted(() => {
               <el-option label="已收藏" value="true" />
               <el-option label="未收藏" value="false" />
             </el-select>
-            <el-button size="small" type="primary" @click="onLogSearch">查询</el-button>
+            <el-button type="primary" @click="onLogSearch">查询</el-button>
           </div>
           <el-table
             v-loading="logLoading"
             :data="logs"
             stripe
             border
-            size="small"
             max-height="440"
             class="log-table"
           >
@@ -666,8 +662,11 @@ onMounted(() => {
               label="SQL"
               prop="sqllog"
               min-width="300"
-              show-overflow-tooltip
-            />
+            >
+              <template #default="{ row }">
+                <TruncateCell :value="(row as QueryLogRow).sqllog" :row="row as unknown as Record<string,unknown>" col="SQLLog" />
+              </template>
+            </el-table-column>
             <el-table-column
               label="实例"
               prop="instance_name"
@@ -696,7 +695,6 @@ onMounted(() => {
                 <el-button
                   link
                   type="primary"
-                  size="small"
                   @click="onRequery(row as QueryLogRow)"
                 >
                   重查
@@ -704,7 +702,6 @@ onMounted(() => {
                 <el-button
                   link
                   :type="row.favorite ? 'warning' : 'primary'"
-                  size="small"
                   @click="onToggleFav(row as QueryLogRow)"
                 >
                   {{ row.favorite ? "取消收藏" : "收藏" }}
@@ -784,10 +781,6 @@ onMounted(() => {
 /* 控制栏表单紧凑、输入框对齐 */
 .control-body :deep(.el-form-item) {
   margin-bottom: 10px;
-}
-/* 历史表格行高紧凑 */
-.log-table :deep(.el-table__cell) {
-  padding: 2px 0;
 }
 
 .dynamic-params {

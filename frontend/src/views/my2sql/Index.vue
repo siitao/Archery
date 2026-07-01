@@ -3,6 +3,7 @@ import { ref, reactive, watch } from "vue";
 import { useRouter } from "vue-router";
 import { ElMessage } from "element-plus";
 import { format as sqlFormat } from "sql-formatter";
+import TruncateCell from "@/components/TruncateCell.vue";
 import { fetchQueryInstances, fetchQueryResources } from "@/api/sqlquery";
 import { fetchBinlogList, runMy2sql, type BinlogFile, type My2SqlRow } from "@/api/binlog";
 import { useBinlogHandoffStore } from "@/stores/binlogHandoff";
@@ -268,14 +269,14 @@ loadInstances();
                 <pre v-if="(row as My2SqlRow).extra_info" class="extra-full">{{ (row as My2SqlRow).extra_info }}</pre>
               </template>
             </el-table-column>
-            <el-table-column label="SQL" min-width="400" show-overflow-tooltip>
+            <el-table-column label="SQL" min-width="400">
               <template #default="{ row }">
-                {{ (row as My2SqlRow).sql }}
+                <TruncateCell :value="(row as My2SqlRow).sql" :row="(row as My2SqlRow) as unknown as Record<string,unknown>" col="sql" />
               </template>
             </el-table-column>
-            <el-table-column label="ExtraInfo" min-width="200" show-overflow-tooltip>
+            <el-table-column label="ExtraInfo" min-width="200">
               <template #default="{ row }">
-                {{ (row as My2SqlRow).extra_info || "" }}
+                <TruncateCell :value="(row as My2SqlRow).extra_info || ''" :row="(row as My2SqlRow) as unknown as Record<string,unknown>" col="extra_info" />
               </template>
             </el-table-column>
           </el-table>

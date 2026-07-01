@@ -12,6 +12,7 @@ import {
   type ProcessRow,
 } from "@/api/instance_admin";
 import { useAuthStore } from "@/stores/auth";
+import TruncateCell from "@/components/TruncateCell.vue";
 
 const auth = useAuthStore();
 const { instanceName, instanceGroups, currentInstance, loadInstances } =
@@ -40,6 +41,17 @@ const canKill = computed(() => auth.hasPerm("sql.process_kill"));
 const canViewTablespace = computed(() => auth.hasPerm("sql.tablespace_view"));
 const canViewTrx = computed(() => auth.hasPerm("sql.trx_view"));
 const canViewLock = computed(() => auth.hasPerm("sql.trxandlocks_view"));
+
+/** 需要截断+展开的长文本列名集合（SQL 列大小写不敏感） */
+const SQL_COLUMNS = new Set(["info", "sql", "query", "current_statement", "sql_text"]);
+
+function isSqlColumn(col: string): boolean {
+  return SQL_COLUMNS.has(col.toLowerCase());
+}
+
+function toRecord(row: ProcessRow): Record<string, unknown> {
+  return row as unknown as Record<string, unknown>;
+}
 
 /** 从进程行取线程 id（多 db_type 适配，对齐旧版 dbdiagnostic.html:748-758） */
 function getThreadId(row: ProcessRow): string | number | (string | number)[] | undefined {
@@ -219,8 +231,12 @@ onMounted(() => {
               :prop="col"
               :label="col"
               min-width="140"
-              show-overflow-tooltip
-            />
+              :show-overflow-tooltip="!isSqlColumn(col)"
+            >
+              <template v-if="isSqlColumn(col)" #default="{ row }">
+                <TruncateCell :value="toRecord(row as ProcessRow)[col]" :row="toRecord(row as ProcessRow)" :col="col" />
+              </template>
+            </el-table-column>
           </el-table>
         </el-tab-pane>
 

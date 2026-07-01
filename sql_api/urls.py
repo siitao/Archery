@@ -11,7 +11,7 @@ from drf_spectacular.views import (
     SpectacularRedocView,
     SpectacularSwaggerView,
 )
-from . import api_user, api_instance, api_workflow, api_sqlquery, api_document, api_query_priv, api_archiver, api_dashboard, api_slowlog
+from . import api_user, api_instance, api_workflow, api_sqlquery, api_document, api_query_priv, api_archiver, api_dashboard, api_slowlog, api_config
 
 router = routers.DefaultRouter()
 
@@ -91,6 +91,7 @@ urlpatterns = [
         "v1/slowquery/trend/",
         api_slowlog.SlowQueryTrend.as_view(),
     ),
+    path("v1/config/", api_config.ConfigView.as_view()),
     path("info", views.info),
     path("debug", views.debug),
     path("do_once/mirage", views.mirage),

@@ -3,6 +3,7 @@ import { ref } from "vue";
 import { ElMessage } from "element-plus";
 import SqlEditor from "@/components/SqlEditor.vue";
 import { generateAnalyze, analyzeSql } from "@/api/phase2";
+import TruncateCell from "@/components/TruncateCell.vue";
 
 const sqlText = ref("");
 const loading = ref(false);
@@ -14,6 +15,13 @@ const analyzeColumns = ref<string[]>([]);
 // analyze 深度报告（markdown/html）
 const report = ref("");
 const reportLoading = ref(false);
+
+/** SQL 长文本列名集合 */
+const SQL_COLUMNS = new Set(["sql", "sqltext", "text", "errormessage", "message", "detail"]);
+
+function isSqlColumn(col: string): boolean {
+  return SQL_COLUMNS.has(col.toLowerCase());
+}
 
 async function onGenerate() {
   if (!sqlText.value.trim()) return ElMessage.warning("请输入 SQL");
@@ -69,8 +77,12 @@ async function onAnalyze() {
           :prop="col"
           :label="col"
           min-width="160"
-          show-overflow-tooltip
-        />
+          :show-overflow-tooltip="!isSqlColumn(col)"
+        >
+          <template v-if="isSqlColumn(col)" #default="{ row }">
+            <TruncateCell :value="(row as Record<string,unknown>)[col]" :row="row as Record<string,unknown>" :col="col" />
+          </template>
+        </el-table-column>
       </el-table>
     </el-card>
 

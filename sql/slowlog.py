@@ -34,11 +34,11 @@ logger = logging.getLogger("default")
 @permission_required("sql.menu_slowquery", raise_exception=True)
 def slowquery_review(request):
     instance_name = request.POST.get("instance_name")
-    start_time = request.POST.get("StartTime")
-    end_time = request.POST.get("EndTime")
+    start_time = request.POST.get("StartTime") or "2010-01-01"
+    end_time = request.POST.get("EndTime") or datetime.datetime.now().strftime("%Y-%m-%d")
     db_name = request.POST.get("db_name")
-    limit = int(request.POST.get("limit"))
-    offset = int(request.POST.get("offset"))
+    limit = int(request.POST.get("limit") or 0)
+    offset = int(request.POST.get("offset") or 0)
     # 获取实例信息
     try:
         instance_info = Instance.objects.get(instance_name=instance_name)
@@ -101,10 +101,13 @@ def slowquery_review(request):
         instance=instance_info, is_enable=True
     ).exists():
         # ============ 阿里云RDS ============
-        query_engine = get_engine(instance=instance_info)
-        result = query_engine.slowquery_review(
-            start_time, end_time, db_name, limit, offset
-        )
+        try:
+            query_engine = get_engine(instance=instance_info)
+            result = query_engine.slowquery_review(
+                start_time, end_time, db_name, limit, offset
+            )
+        except Exception as e:
+            result = {"status": 1, "msg": f"获取阿里云RDS慢查询失败: {e}", "rows": []}
     else:
         # ============ MySQL 本地实例 ============
         limit = offset + limit
@@ -179,12 +182,12 @@ def slowquery_review(request):
 @permission_required("sql.menu_slowquery", raise_exception=True)
 def slowquery_review_history(request):
     instance_name = request.POST.get("instance_name")
-    start_time = request.POST.get("StartTime")
-    end_time = request.POST.get("EndTime")
+    start_time = request.POST.get("StartTime") or "2010-01-01"
+    end_time = request.POST.get("EndTime") or datetime.datetime.now().strftime("%Y-%m-%d")
     db_name = request.POST.get("db_name")
     sql_id = request.POST.get("SQLId")
-    limit = int(request.POST.get("limit"))
-    offset = int(request.POST.get("offset"))
+    limit = int(request.POST.get("limit") or 0)
+    offset = int(request.POST.get("offset") or 0)
     # 获取实例信息
     try:
         instance_info = Instance.objects.get(instance_name=instance_name)
@@ -250,10 +253,13 @@ def slowquery_review_history(request):
         instance=instance_info, is_enable=True
     ).exists():
         # ============ 阿里云RDS ============
-        query_engine = get_engine(instance=instance_info)
-        result = query_engine.slowquery_review_history(
-            start_time, end_time, db_name, sql_id, limit, offset
-        )
+        try:
+            query_engine = get_engine(instance=instance_info)
+            result = query_engine.slowquery_review_history(
+                start_time, end_time, db_name, sql_id, limit, offset
+            )
+        except Exception as e:
+            result = {"status": 1, "msg": f"获取阿里云RDS慢查询明细失败: {e}", "rows": []}
     else:
         # ============ MySQL 本地实例 ============
         search = request.POST.get("search")

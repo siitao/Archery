@@ -6,6 +6,7 @@ import {
   fetchWorkflowAudit,
   fetchQueryLogAudit,
 } from "@/api/phase2";
+import TruncateCell from "@/components/TruncateCell.vue";
 
 const route = useRoute();
 
@@ -25,6 +26,13 @@ const query = reactive({
   page: 1,
   size: 20,
 });
+
+/** SQL/长文本列名集合（审计日志中 SQL 字段常见名） */
+const SQL_COLUMNS = new Set(["sql", "sql_content", "sqllog", "query_sql", "content", "detail", "sql_text"]);
+
+function isSqlColumn(col: string): boolean {
+  return SQL_COLUMNS.has(col.toLowerCase());
+}
 
 async function loadData() {
   loading.value = true;
@@ -123,8 +131,12 @@ onMounted(loadData);
           :prop="col"
           :label="col"
           min-width="140"
-          show-overflow-tooltip
-        />
+          :show-overflow-tooltip="!isSqlColumn(col)"
+        >
+          <template v-if="isSqlColumn(col)" #default="{ row }">
+            <TruncateCell :value="(row as Record<string,unknown>)[col]" :row="row as Record<string,unknown>" :col="col" />
+          </template>
+        </el-table-column>
       </el-table>
       <div class="pager">
         <el-pagination

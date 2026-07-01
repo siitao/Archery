@@ -3,12 +3,19 @@ import { ref, computed } from "vue";
 import * as XLSX from "xlsx";
 import { legacyBase } from "@/utils/request";
 import type { QueryResultEnvelope } from "@/api/sqlquery";
+import TruncateCell from "@/components/TruncateCell.vue";
 
 const props = defineProps<{
   /** 执行结果信封（status 三态），null=未执行 */
   envelope: QueryResultEnvelope | null;
   loading?: boolean;
 }>();
+
+const SQL_COLUMNS = new Set(["sql", "sqllog", "sql_text"]);
+
+function isSqlColumn(col: string): boolean {
+  return SQL_COLUMNS.has(col.toLowerCase());
+}
 
 const page = ref(1);
 const pageSize = ref(50);
@@ -159,9 +166,12 @@ function exportXlsx() {
           :prop="col"
           :label="col"
           min-width="140"
-          show-overflow-tooltip
+          :show-overflow-tooltip="!isSqlColumn(col)"
         >
-          <template #default="{ row }">{{ formatCell(row[col]) }}</template>
+          <template v-if="isSqlColumn(col)" #default="{ row }">
+            <TruncateCell :value="row[col]" :row="row" :col="col" />
+          </template>
+          <template v-else #default="{ row }">{{ formatCell(row[col]) }}</template>
         </el-table-column>
       </el-table>
       <el-empty v-else description="结果为空" />

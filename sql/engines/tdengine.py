@@ -47,6 +47,8 @@ class TDengineEngine(EngineBase):
 
     def escape_string(self, value: str) -> str:
         """字符串参数转义"""
+        if value is None:
+            return ""
         return escape_string(value)
 
     @property

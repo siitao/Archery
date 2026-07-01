@@ -183,12 +183,54 @@ def grant(request):
         priv_type = int(request.POST.get("priv_type"))
         privs = json.loads(request.POST.get("privs"))
 
+        # 兼容新旧前端格式：
+        # - 旧格式（dict）：{"global_privs": [...], "db_privs": [...], ...}
+        # - 新格式（list）：["SELECT", "INSERT", ...] 直接是权限名数组
+        def _extract_privs(key: str):
+            """从 privs 中提取权限列表，兼容 dict 和 list 两种格式"""
+            if isinstance(privs, dict):
+                return privs.get(key, [])
+            return privs  # 新前端直接传列表
+
+        def _getlist(key: str):
+            """
+            兼容两种数组传参格式：
+            - Django 原生：`key[]=v1&key[]=v2` → request.POST.getlist("key[]")
+            - JSON 字符串（新前端 form() 函数）：`key=["v1","v2"]` → request.POST.get("key")
+            """
+            val = request.POST.getlist(key)
+            if val and val[0]:
+                return val
+            # 也尝试用不带 [] 的 key 获取 JSON 字符串
+            key2 = key.rstrip("[]")  # "db_name[]" → "db_name"
+            raw = request.POST.get(key, "") or request.POST.get(key2, "")
+            if raw:
+                try:
+                    parsed = json.loads(raw)
+                    if isinstance(parsed, list):
+                        return parsed
+                except (json.JSONDecodeError, TypeError):
+                    return [raw]
+            return []
+
+        def _get(key: str):
+            """兼容 request.POST.get 和 JSON 数组格式"""
+            val = request.POST.get(key, "")
+            if val:
+                try:
+                    parsed = json.loads(val)
+                    if isinstance(parsed, list):
+                        return parsed[0] if parsed else ""
+                except (json.JSONDecodeError, TypeError):
+                    pass
+            return val
+
         # escape
         user_host = engine.escape_string(user_host)
 
         # 全局权限
         if priv_type == 0:
-            global_privs = privs["global_privs"]
+            global_privs = _extract_privs("global_privs")
             if not all([global_privs]):
                 return JsonResponse(
                     {"status": 1, "msg": "信息不完整，请确认后提交", "data": []}
@@ -201,43 +243,43 @@ def grant(request):
 
         # 库权限
         elif priv_type == 1:
-            db_privs = privs["db_privs"]
-            db_name = request.POST.getlist("db_name[]")
+            db_privs = _extract_privs("db_privs")
+            db_name = _getlist("db_name[]")
             if not all([db_privs, db_name]):
                 return JsonResponse(
                     {"status": 1, "msg": "信息不完整，请确认后提交", "data": []}
                 )
             for db in db_name:
-                db_privs = ["GRANT OPTION" if d == "GRANT" else d for d in db_privs]
+                priv_list = ["GRANT OPTION" if d == "GRANT" else d for d in db_privs]
                 if op_type == 0:
                     grant_sql += (
-                        f"GRANT {','.join(db_privs)} ON `{db}`.* TO {user_host};"
+                        f"GRANT {','.join(priv_list)} ON `{db}`.* TO {user_host};"
                     )
                 elif op_type == 1:
                     grant_sql += (
-                        f"REVOKE {','.join(db_privs)} ON `{db}`.* FROM {user_host};"
+                        f"REVOKE {','.join(priv_list)} ON `{db}`.* FROM {user_host};"
                     )
         # 表权限
         elif priv_type == 2:
-            tb_privs = privs["tb_privs"]
-            db_name = request.POST.get("db_name")
-            tb_name = request.POST.getlist("tb_name[]")
+            tb_privs = _extract_privs("tb_privs")
+            db_name = _get("db_name")
+            tb_name = _getlist("tb_name[]")
             if not all([tb_privs, db_name, tb_name]):
                 return JsonResponse(
                     {"status": 1, "msg": "信息不完整，请确认后提交", "data": []}
                 )
             for tb in tb_name:
-                tb_privs = ["GRANT OPTION" if t == "GRANT" else t for t in tb_privs]
+                priv_list = ["GRANT OPTION" if t == "GRANT" else t for t in tb_privs]
                 if op_type == 0:
-                    grant_sql += f"GRANT {','.join(tb_privs)} ON `{db_name}`.`{tb}` TO {user_host};"
+                    grant_sql += f"GRANT {','.join(priv_list)} ON `{db_name}`.`{tb}` TO {user_host};"
                 elif op_type == 1:
-                    grant_sql += f"REVOKE {','.join(tb_privs)} ON `{db_name}`.`{tb}` FROM {user_host};"
+                    grant_sql += f"REVOKE {','.join(priv_list)} ON `{db_name}`.`{tb}` FROM {user_host};"
         # 列权限
         elif priv_type == 3:
-            col_privs = privs["col_privs"]
-            db_name = request.POST.get("db_name")
-            tb_name = request.POST.get("tb_name")
-            col_name = request.POST.getlist("col_name[]")
+            col_privs = _extract_privs("col_privs")
+            db_name = _get("db_name")
+            tb_name = _get("tb_name")
+            col_name = _getlist("col_name[]")
             if not all([col_privs, db_name, tb_name, col_name]):
                 return JsonResponse(
                     {"status": 1, "msg": "信息不完整，请确认后提交", "data": []}

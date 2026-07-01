@@ -175,7 +175,12 @@ export function alterRunDate(params: {
 /** 回滚语句行（backup_sql 返回，get_rollback 列表，元素为 SQL 字符串或 {sql,...}） */
 export type BackupSqlRow = string | ReviewRow;
 
-/** 查看回滚 SQL（GET /sqlworkflow/backup_sql/，{status,msg,rows}） */
+/** 查看回滚 SQL（GET /sqlworkflow/backup_sql/，{status,msg,rows}）
+ *  rows 元素可能是：
+ *   - 二维数组 [source_sql, rollback_sql]（goinception get_rollback 返回）
+ *   - 字符串
+ *   - ReviewRow 对象
+ */
 export async function fetchBackupSql(workflowId: number): Promise<ReviewRow[]> {
   const { data } = await request.get<{ status: number; msg: string; rows: BackupSqlRow[] }>(
     "/sqlworkflow/backup_sql/",
@@ -184,10 +189,16 @@ export async function fetchBackupSql(workflowId: number): Promise<ReviewRow[]> {
   if (data.status !== 0) {
     throw new Error(data.msg || "获取回滚语句失败");
   }
-  // 统一成 ReviewRow[]（字符串 → {sql}）
-  return (data.rows || []).map((r) =>
-    typeof r === "string" ? { sql: r } : (r as ReviewRow)
-  );
+  return (data.rows || []).map((r) => {
+    if (Array.isArray(r)) {
+      // [source_sql, rollback_sql] 二维数组格式
+      return { sql: r[0], errormessage: `回滚SQL: ${r[1] || ""}` } as ReviewRow;
+    }
+    if (typeof r === "string") {
+      return { sql: r } as ReviewRow;
+    }
+    return r as ReviewRow;
+  });
 }
 
 /** 下载回滚 SQL 文件（GET /rollback/?workflow_id=&download=true，服务端打包文件流） */

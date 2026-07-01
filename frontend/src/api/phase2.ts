@@ -346,8 +346,9 @@ export function fetchAuditLog(params: {
       { headers: FORM_HEADERS }
     )
     .then((res) => {
-      const e = checkStatus(res.data);
-      return { total: e.total || 0, rows: e.rows || [] };
+      // 旧接口返回 {total,rows} 无 status 字段，checkStatus 会误判；直接取数据
+      const d = res.data as Record<string, unknown>;
+      return { total: (d.total as number) || 0, rows: (d.rows as Record<string, unknown>[]) || [] };
     });
 }
 
@@ -358,14 +359,14 @@ export function fetchWorkflowAudit(params: {
   search?: string;
 }) {
   return request
-    .post<{ status: number; msg: string; total?: number; rows?: Record<string, unknown>[] }>(
+    .post<{ total?: number; rows?: Record<string, unknown>[] }>(
       "/sqlworkflow_list_audit/",
       form(params),
       { headers: FORM_HEADERS }
     )
     .then((res) => {
-      const e = checkStatus(res.data);
-      return { total: e.total || 0, rows: e.rows || [] };
+      const d = res.data as Record<string, unknown>;
+      return { total: (d.total as number) || 0, rows: (d.rows as Record<string, unknown>[]) || [] };
     });
 }
 
@@ -376,13 +377,13 @@ export function fetchQueryLogAudit(params: {
   search?: string;
 }) {
   return request
-    .post<{ status: number; msg: string; total?: number; rows?: Record<string, unknown>[] }>(
+    .post<{ total?: number; rows?: Record<string, unknown>[] }>(
       "/query/querylog_audit/",
       form(params),
       { headers: FORM_HEADERS }
     )
     .then((res) => {
-      const e = checkStatus(res.data);
-      return { total: e.total || 0, rows: e.rows || [] };
+      const d = res.data as Record<string, unknown>;
+      return { total: (d.total as number) || 0, rows: (d.rows as Record<string, unknown>[]) || [] };
     });
 }

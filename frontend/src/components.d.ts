@@ -61,11 +61,13 @@ declare module 'vue' {
     ElTabs: typeof import('element-plus/es')['ElTabs']
     ElTag: typeof import('element-plus/es')['ElTag']
     ElTooltip: typeof import('element-plus/es')['ElTooltip']
+    ElTree: typeof import('element-plus/es')['ElTree']
     RouterLink: typeof import('vue-router')['RouterLink']
     RouterView: typeof import('vue-router')['RouterView']
     SqlEditor: typeof import('./components/SqlEditor.vue')['default']
     SqlQueryResultTable: typeof import('./components/SqlQueryResultTable.vue')['default']
     SqlReviewTable: typeof import('./components/SqlReviewTable.vue')['default']
+    TruncateCell: typeof import('./components/TruncateCell.vue')['default']
   }
   export interface GlobalDirectives {
     vLoading: typeof import('element-plus/es')['ElLoadingDirective']

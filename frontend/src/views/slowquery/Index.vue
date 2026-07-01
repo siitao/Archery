@@ -6,6 +6,7 @@ import { useInstanceSelect } from "@/composables/useInstanceSelect";
 import { fetchQueryResources } from "@/api/sqlquery";
 import { fetchSlowReview, fetchSlowHistory, fetchSlowTrend } from "@/api/phase2";
 import EChart from "@/components/EChart.vue";
+import TruncateCell from "@/components/TruncateCell.vue";
 
 const { instanceName, instanceGroups, currentInstance, loadInstances } =
   useInstanceSelect();
@@ -21,6 +22,13 @@ const historyRows = ref<Record<string, unknown>[]>([]);
 const historyCols = ref<string[]>([]);
 const loading = ref(false);
 
+/** SQL 长文本列名集合（大小写不敏感） */
+const SQL_COLUMNS = new Set(["sqltext", "sql_text", "sql", "info", "fingerprint"]);
+
+function isSqlColumn(col: string): boolean {
+  return SQL_COLUMNS.has(col.toLowerCase());
+}
+
 async function loadDbs() {
   if (!currentInstance.value) return;
   try {
@@ -34,7 +42,7 @@ async function loadDbs() {
 }
 
 function dateStr(i: 0 | 1) {
-  return dateRange.value?.[i] || "";
+  return dateRange.value?.[i] || undefined;
 }
 
 async function loadReview() {
@@ -199,8 +207,12 @@ onMounted(loadInstances);
               :prop="col"
               :label="col"
               min-width="140"
-              show-overflow-tooltip
-            />
+              :show-overflow-tooltip="!isSqlColumn(col)"
+            >
+              <template v-if="isSqlColumn(col)" #default="{ row }">
+                <TruncateCell :value="(row as Record<string,unknown>)[col]" :row="row as Record<string,unknown>" :col="col" />
+              </template>
+            </el-table-column>
             <el-table-column label="操作" width="90" fixed="right">
               <template #default="{ row }">
                 <el-button link type="primary" @click="openTrend(row as Record<string, unknown>)">
@@ -218,8 +230,12 @@ onMounted(loadInstances);
               :prop="col"
               :label="col"
               min-width="140"
-              show-overflow-tooltip
-            />
+              :show-overflow-tooltip="!isSqlColumn(col)"
+            >
+              <template v-if="isSqlColumn(col)" #default="{ row }">
+                <TruncateCell :value="(row as Record<string,unknown>)[col]" :row="row as Record<string,unknown>" :col="col" />
+              </template>
+            </el-table-column>
           </el-table>
         </el-tab-pane>
       </el-tabs>
