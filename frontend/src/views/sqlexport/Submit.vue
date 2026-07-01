@@ -10,6 +10,7 @@ import {
   type GroupInstanceRow,
 } from "@/api/group";
 import { submitWorkflow, type ReviewRow } from "@/api/sqlworkflow";
+import { fetchQueryResources } from "@/api/sqlquery";
 import {
   exportPreCheck,
   EXPORT_FORMATS,
@@ -34,6 +35,7 @@ const sqlContent = ref("");
 const groupOptions = ref<ResourceGroupRow[]>([]);
 const instanceOptions = ref<GroupInstanceRow[]>([]);
 const auditorsDisplay = ref("");
+const dbOptions = ref<string[]>([]);
 
 // 导出校验结果
 const checkResult = ref<ExportPreCheckResult | null>(null);
@@ -73,6 +75,24 @@ watch(
     try {
       const a = await fetchGroupAuditors(gname);
       auditorsDisplay.value = a.auditors_display || "无需审批";
+    } catch {
+      // 拦截器已提示
+    }
+  }
+);
+
+// 选实例 → 拉数据库列表
+watch(
+  () => form.instance,
+  async (iid) => {
+    dbOptions.value = [];
+    form.db_name = "";
+    if (!iid) return;
+    try {
+      dbOptions.value = await fetchQueryResources({
+        instance_id: iid,
+        resource_type: "database",
+      });
     } catch {
       // 拦截器已提示
     }
@@ -235,7 +255,15 @@ onMounted(loadGroups);
           </el-select>
         </el-form-item>
         <el-form-item label="数据库" required>
-          <el-input v-model="form.db_name" placeholder="目标数据库名" style="width: 280px" />
+          <el-select
+            v-model="form.db_name"
+            placeholder="请选择数据库"
+            filterable
+            :disabled="!form.instance"
+            style="width: 280px"
+          >
+            <el-option v-for="d in dbOptions" :key="d" :label="d" :value="d" />
+          </el-select>
         </el-form-item>
         <el-form-item label="可执行时间">
           <el-date-picker

@@ -17,7 +17,7 @@ const dbName = ref("");
 const dbOptions = ref<string[]>([]);
 const activeType = ref<DictionaryObjectType>("table");
 const objectName = ref("");
-const objects = ref<{ name: string }[]>([]);
+const objects = ref<{ name: string; comment: string }[]>([]);
 const listLoading = ref(false);
 const info = ref("");
 const infoLoading = ref(false);
@@ -155,9 +155,10 @@ onMounted(loadInstances);
             border
             highlight-current-row
             max-height="540"
-            @current-change="(r: { name: string } | null) => r && onSelectObject(r.name)"
+            @current-change="(r: { name: string; comment: string } | null) => r && onSelectObject(r.name)"
           >
             <el-table-column prop="name" label="名称" min-width="180" show-overflow-tooltip />
+            <el-table-column prop="comment" label="备注" min-width="160" show-overflow-tooltip />
           </el-table>
         </el-col>
         <el-col :span="16">

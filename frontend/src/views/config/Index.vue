@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from "vue";
 import { ElMessage } from "element-plus";
-import { fetchConfig, saveConfig } from "@/api/config";
+import { fetchConfig, saveConfig, checkGoInception } from "@/api/config";
 import {
   CONFIG_SECTIONS,
   CONFIG_SUBSECTIONS,
@@ -136,6 +136,29 @@ async function onSave() {
   }
 }
 
+const checkingGoInception = ref(false);
+
+async function onCheckGoInception() {
+  checkingGoInception.value = true;
+  try {
+    await checkGoInception({
+      go_inception_host: String(configValues.value.go_inception_host ?? ""),
+      go_inception_port: String(configValues.value.go_inception_port ?? ""),
+      go_inception_user: String(configValues.value.go_inception_user ?? ""),
+      go_inception_password: String(configValues.value.go_inception_password ?? ""),
+      inception_remote_backup_host: String(configValues.value.inception_remote_backup_host ?? ""),
+      inception_remote_backup_port: String(configValues.value.inception_remote_backup_port ?? ""),
+      inception_remote_backup_user: String(configValues.value.inception_remote_backup_user ?? ""),
+      inception_remote_backup_password: String(configValues.value.inception_remote_backup_password ?? ""),
+    });
+    ElMessage.success("goInception 和备份库测试连接成功，请点击保存按钮生效！");
+  } catch (e) {
+    ElMessage.error(`连接失败：${(e as Error).message}`);
+  } finally {
+    checkingGoInception.value = false;
+  }
+}
+
 // 默认展开第一个分区
 const activeSections = ref<string[]>([CONFIG_SECTIONS[0]]);
 
@@ -266,6 +289,17 @@ onMounted(() => {
                 </el-form-item>
               </el-col>
             </el-row>
+            <!-- goInception 分区测试连接按钮 -->
+            <div v-if="section.name === 'goInception 配置'" class="check-row">
+              <el-button
+                type="warning"
+                :loading="checkingGoInception"
+                @click="onCheckGoInception"
+              >
+                测试连接
+              </el-button>
+              <span class="field-hint">测试 goInception 和备份库连接是否正常</span>
+            </div>
           </template>
         </el-collapse-item>
       </el-collapse>
@@ -397,6 +431,18 @@ onMounted(() => {
     &:hover {
       color: var(--el-color-primary);
     }
+  }
+
+  .check-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin: 8px 0 4px;
+  }
+
+  .field-hint {
+    font-size: 12px;
+    color: var(--el-text-color-secondary);
   }
 
   // 表单项

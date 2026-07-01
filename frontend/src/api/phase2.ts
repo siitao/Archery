@@ -74,16 +74,22 @@ const DD_TYPE_MAP: Record<DictionaryObjectType, { list: string; info: string; na
   event: { list: "event_list", info: "event_info", nameParam: "event_name" },
 };
 
-/** 对象列表（GET /data_dictionary/<type>_list/） */
+/** 对象列表（GET /data_dictionary/<type>_list/）
+
+    实际后端返回格式:
+    { status:0, data: { "a": [["name","comment"],...], "n": [...] } }
+    即按首字母分组、每项 [name, comment]。
+    兼容旧格式 rows: [{name}]。
+*/
 export function fetchDictionaryObjects(params: {
   instance_name: string;
   db_name: string;
   db_type?: string;
   object_type: DictionaryObjectType;
-}) {
+}): Promise<{ name: string; comment: string }[]> {
   const path = `/data_dictionary/${DD_TYPE_MAP[params.object_type].list}/`;
   return request
-    .get<{ status: number; msg: string; rows?: { name: string }[]; data?: { name: string }[] }>(
+    .get<{ status: number; msg: string; rows?: [string, string][]; data?: Record<string, [string, string][]> | { name: string }[] }>(
       path,
       {
         params: {
@@ -95,7 +101,19 @@ export function fetchDictionaryObjects(params: {
     )
     .then((res) => {
       const e = checkStatus(res.data);
-      return e.rows || e.data || [];
+      // 新格式：data 是按首字母分组的对象 { letter: [[name, comment], ...] }
+      if (e.data && !Array.isArray(e.data) && typeof e.data === "object") {
+        return Object.values(e.data)
+          .flat()
+          .map((pair) => ({ name: pair[0], comment: pair[1] ?? "" }));
+      }
+      // 旧格式：rows 是 [[name, comment], ...] 或 [{name}, ...]
+      const rows = e.rows ?? (Array.isArray(e.data) ? e.data : []);
+      return rows.map((r: any) =>
+        Array.isArray(r)
+          ? { name: r[0], comment: r[1] ?? "" }
+          : { name: r.name ?? String(r), comment: r.comment ?? "" }
+      );
     });
 }
 
