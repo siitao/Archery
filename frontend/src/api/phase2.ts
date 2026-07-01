@@ -3,8 +3,7 @@ import { ElMessage } from "element-plus";
 
 /**
  * Phase 2 批次 1：6 个只读页的旧 JSON 接口封装。
- * 复用 checkStatus/form 模式（参考 instance_admin.ts），旧接口 POST form + {status,msg,data/rows} 信封。
- * 所有必传参数（含 limit/offset，避免 int(None)）都给默认值。
+ * 部分接口仍用 POST form-encoded（schemasync / 系统审计 等剩余旧端点）。
  */
 
 function checkStatus<T extends { status?: number; msg?: string }>(env: T): T {
@@ -15,6 +14,7 @@ function checkStatus<T extends { status?: number; msg?: string }>(env: T): T {
   return env;
 }
 
+/** 表单编码（部分旧接口仍用 request.POST，如 schemaSync / 审计）。 */
 function form(obj: Record<string, unknown>) {
   const f = new URLSearchParams();
   for (const [k, v] of Object.entries(obj)) {
@@ -32,9 +32,8 @@ const FORM_HEADERS = { "Content-Type": "application/x-www-form-urlencoded" };
 export function generateAnalyze(text: string) {
   return request
     .post<{ status: number; msg: string; total?: number; rows?: Record<string, unknown>[] }>(
-      "/sql_analyze/generate/",
-      form({ text }),
-      { headers: FORM_HEADERS }
+      "/api/v1/sql_analyze/generate/",
+      { text },
     )
     .then((res) => {
       const e = checkStatus(res.data);
@@ -49,9 +48,7 @@ export function analyzeSql(params: {
   db_name: string;
 }) {
   return request
-    .post<{ status: number; msg: string; data?: string }>("/sql_analyze/analyze/", form(params), {
-      headers: FORM_HEADERS,
-    })
+    .post<{ status: number; msg: string; data?: string }>("/api/v1/sql_analyze/analyze/", params)
     .then((res) => checkStatus(res.data).data || "");
 }
 
@@ -168,9 +165,8 @@ export function optimizeSqlAdvisor(params: {
 }) {
   return request
     .post<{ status: number; msg: string; data?: string }>(
-      "/slowquery/optimize_sqladvisor/",
-      form({ ...params, verbose: params.verbose ?? 1 }),
-      { headers: FORM_HEADERS }
+      "/api/v1/optimize/sqladvisor/",
+      { ...params, verbose: params.verbose ?? 1 },
     )
     .then((res) => checkStatus(res.data).data || "");
 }
@@ -182,9 +178,7 @@ export function optimizeSoar(params: {
   sql: string;
 }) {
   return request
-    .post<{ status: number; msg: string; data?: string }>("/slowquery/optimize_soar/", form(params), {
-      headers: FORM_HEADERS,
-    })
+    .post<{ status: number; msg: string; data?: string }>("/api/v1/optimize/soar/", params)
     .then((res) => checkStatus(res.data).data || "");
 }
 
@@ -196,14 +190,13 @@ export function optimizeSqlTuning(params: {
 }) {
   return request
     .post<{ status: number; msg: string; data?: string }>(
-      "/slowquery/optimize_sqltuning/",
-      form(params),
-      { headers: FORM_HEADERS }
+      "/api/v1/optimize/sqltuning/",
+      params,
     )
     .then((res) => checkStatus(res.data).data || "");
 }
 
-/** 执行计划（POST /query/explain/，返回 {column_list, rows}） */
+/** 执行计划（POST /api/v1/optimize/explain/，返回 {column_list, rows}） */
 export function explainSql(params: {
   instance_name: string;
   db_name: string;
@@ -211,16 +204,15 @@ export function explainSql(params: {
 }) {
   return request
     .post<{ status: number; msg: string; data?: { column_list?: string[]; rows?: unknown[][] } }>(
-      "/query/explain/",
-      form(params),
-      { headers: FORM_HEADERS }
+      "/api/v1/optimize/explain/",
+      params,
     )
     .then((res) => checkStatus(res.data).data || { column_list: [], rows: [] });
 }
 
 // ============ 慢查日志 slowlog.py ============
 
-/** 慢查统计（POST /slowquery/review/，{total,rows}） */
+/** 慢查统计（POST /api/v1/slowquery/review/，{total,rows}） */
 export function fetchSlowReview(params: {
   instance_name: string;
   db_name?: string;
@@ -232,8 +224,8 @@ export function fetchSlowReview(params: {
 }) {
   return request
     .post<{ status: number; msg: string; total?: number; rows?: Record<string, unknown>[] }>(
-      "/slowquery/review/",
-      form({
+      "/api/v1/slowquery/review/",
+      {
         instance_name: params.instance_name,
         db_name: params.db_name ?? "",
         StartTime: params.StartTime ?? "",
@@ -243,8 +235,7 @@ export function fetchSlowReview(params: {
         search: params.search ?? "",
         sortName: "",
         sortOrder: "",
-      }),
-      { headers: FORM_HEADERS }
+      },
     )
     .then((res) => {
       const e = checkStatus(res.data);
@@ -252,7 +243,7 @@ export function fetchSlowReview(params: {
     });
 }
 
-/** 慢查明细（POST /slowquery/review_history/） */
+/** 慢查明细（POST /api/v1/slowquery/review_history/） */
 export function fetchSlowHistory(params: {
   instance_name: string;
   db_name?: string;
@@ -265,8 +256,8 @@ export function fetchSlowHistory(params: {
 }) {
   return request
     .post<{ status: number; msg: string; total?: number; rows?: Record<string, unknown>[] }>(
-      "/slowquery/review_history/",
-      form({
+      "/api/v1/slowquery/review_history/",
+      {
         instance_name: params.instance_name,
         db_name: params.db_name ?? "",
         StartTime: params.StartTime ?? "",
@@ -277,8 +268,7 @@ export function fetchSlowHistory(params: {
         search: params.search ?? "",
         sortName: "",
         sortOrder: "",
-      }),
-      { headers: FORM_HEADERS }
+      },
     )
     .then((res) => {
       const e = checkStatus(res.data);

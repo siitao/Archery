@@ -9,9 +9,7 @@ from common import auth, config, check
 from sql import (
     views,
     sql_workflow,
-    sql_analyze,
     query,
-    slowlog,
     instance,
     resource_group,
     binlog,
@@ -45,22 +43,6 @@ urlpatterns = [
     path("sqlworkflow_list_audit/", sql_workflow.sql_workflow_list_audit),
     path("sqlworkflow/backup_sql/", sql_workflow.backup_sql),
     path("inception/osc_control/", sql_workflow.osc_control),
-
-    # ---- SQL 分析 / 优化 ----
-    path("sql_analyze/generate/", sql_analyze.generate),
-    path("sql_analyze/analyze/", sql_analyze.analyze),
-    path("query/explain/", sql.sql_optimize.explain),
-    path(
-        "slowquery/optimize_sqladvisor/", sql.sql_optimize.optimize_sqladvisor
-    ),
-    path(
-        "slowquery/optimize_sqltuning/", sql.sql_optimize.optimize_sqltuning
-    ),
-    path("slowquery/optimize_soar/", sql.sql_optimize.optimize_soar),
-
-    # ---- 慢查 JSON ----
-    path("slowquery/review/", slowlog.slowquery_review),
-    path("slowquery/review_history/", slowlog.slowquery_review_history),
 
     # ---- 查询 / 审计 ----
     path("query/querylog_audit/", query.querylog_audit),
