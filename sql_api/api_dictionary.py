@@ -27,9 +27,8 @@ from rest_framework import viewsets
 from rest_framework.decorators import action
 from rest_framework.permissions import BasePermission, IsAuthenticated
 
-from sql.engines import get_engine
 from sql.models import Instance
-from sql.utils.resource_group import user_instances
+from sql.services.instance_service import resolve_instance_and_engine
 
 
 class DataDictionaryPermission(BasePermission):
@@ -45,13 +44,12 @@ class DataDictionaryPermission(BasePermission):
 # ---------- shared helpers ----------
 
 def _get_engine(request):
-    """从 GET 参数获取 instance + engine。鉴权失败抛 Instance.DoesNotExist。"""
+    """从 GET 参数获取 instance + engine。"""
     instance_name = request.GET.get("instance_name", "")
     db_type = request.GET.get("db_type", "")
-    instance = user_instances(request.user, db_type=[db_type]).get(
-        instance_name=instance_name
+    return resolve_instance_and_engine(
+        request.user, instance_name=instance_name, db_type=db_type
     )
-    return instance, get_engine(instance=instance)
 
 
 def _dict_list_response(request, engine_method):

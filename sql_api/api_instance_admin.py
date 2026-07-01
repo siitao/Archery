@@ -43,6 +43,7 @@ from sql.models import (
     Users,
 )
 from sql.plugins.schemasync import SchemaSync
+from sql.services.instance_service import resolve_instance
 from sql.utils.instance_management import (
     SUPPORTED_MANAGEMENT_DB_TYPE,
     get_instanceaccount_unique_key,
@@ -61,9 +62,9 @@ def _get_instance(request):
     """从 request.data 获取 instance_id，鉴权后返回 Instance。"""
     instance_id = request.data.get("instance_id", 0)
     try:
-        return user_instances(
-            request.user, db_type=SUPPORTED_MANAGEMENT_DB_TYPE
-        ).get(id=instance_id)
+        return resolve_instance(
+            request.user, instance_id=instance_id, db_type=SUPPORTED_MANAGEMENT_DB_TYPE
+        )
     except Instance.DoesNotExist:
         return None
 
@@ -72,8 +73,8 @@ def _get_instance_mysql_mongo(request):
     """获取 mysql/mongo 实例（数据库管理用）。"""
     instance_id = request.data.get("instance_id", 0)
     try:
-        return user_instances(request.user, db_type=["mysql", "mongo"]).get(
-            id=instance_id
+        return resolve_instance(
+            request.user, instance_id=instance_id, db_type=["mysql", "mongo"]
         )
     except Instance.DoesNotExist:
         return None
