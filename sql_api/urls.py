@@ -11,7 +11,7 @@ from drf_spectacular.views import (
     SpectacularRedocView,
     SpectacularSwaggerView,
 )
-from . import api_user, api_instance, api_workflow, api_sqlquery, api_document, api_query_priv, api_archiver, api_dashboard, api_slowlog, api_config, api_dictionary
+from . import api_user, api_instance, api_workflow, api_sqlquery, api_document, api_query_priv, api_archiver, api_dashboard, api_slowlog, api_config, api_dictionary, api_instance_admin
 
 router = routers.DefaultRouter()
 router.register(
@@ -97,6 +97,21 @@ urlpatterns = [
         api_slowlog.SlowQueryTrend.as_view(),
     ),
     path("v1/config/", api_config.ConfigView.as_view()),
+    # ---- 实例管理 ----
+    path("v1/instance/accounts/", api_instance_admin.AccountListView.as_view()),
+    path("v1/instance/accounts/create/", api_instance_admin.AccountCreateView.as_view()),
+    path("v1/instance/accounts/edit/", api_instance_admin.AccountEditView.as_view()),
+    path("v1/instance/accounts/grant/", api_instance_admin.AccountGrantView.as_view()),
+    path("v1/instance/accounts/reset_pwd/", api_instance_admin.AccountResetPwdView.as_view()),
+    path("v1/instance/accounts/lock/", api_instance_admin.AccountLockView.as_view()),
+    path("v1/instance/accounts/delete/", api_instance_admin.AccountDeleteView.as_view()),
+    path("v1/instance/databases/", api_instance_admin.DatabaseListView.as_view()),
+    path("v1/instance/databases/create/", api_instance_admin.DatabaseCreateView.as_view()),
+    path("v1/instance/databases/edit/", api_instance_admin.DatabaseEditView.as_view()),
+    path("v1/instance/params/", api_instance_admin.ParamListView.as_view()),
+    path("v1/instance/params/history/", api_instance_admin.ParamHistoryView.as_view()),
+    path("v1/instance/params/edit/", api_instance_admin.ParamEditView.as_view()),
+    path("v1/instance/params/compare/", api_instance_admin.ParamCompareView.as_view()),
     path("info", views.info),
     path("debug", views.debug),
     path("do_once/mirage", views.mirage),

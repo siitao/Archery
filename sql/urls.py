@@ -3,7 +3,6 @@
 from django.urls import path
 from django.views.i18n import JavaScriptCatalog
 
-import sql.instance_database
 import sql.query_privileges
 import sql.sql_optimize
 from common import auth, config, check
@@ -14,7 +13,6 @@ from sql import (
     query,
     slowlog,
     instance,
-    instance_account,
     db_diagnostic,
     resource_group,
     binlog,
@@ -79,17 +77,7 @@ urlpatterns = [
     ),
     path("audit/log/", audit_log.audit_log),
 
-    # ---- 实例管理 JSON ----
-    path("instance/user/list", instance_account.users),
-    path("instance/user/create/", instance_account.create),
-    path("instance/user/edit/", instance_account.edit),
-    path("instance/user/grant/", instance_account.grant),
-    path("instance/user/reset_pwd/", instance_account.reset_pwd),
-    path("instance/user/lock/", instance_account.lock),
-    path("instance/user/delete/", instance_account.delete),
-    path("instance/database/list/", sql.instance_database.databases),
-    path("instance/database/create/", sql.instance_database.create),
-    path("instance/database/edit/", sql.instance_database.edit),
+    # ---- 实例管理 JSON（已迁至 /api/v1/instance/accounts/、/databases/、/params/） ----
     path("instance/schemasync/", instance.schemasync),
 
     # ---- 会话诊断 ----
@@ -103,11 +91,7 @@ urlpatterns = [
     path("db_diagnostic/trxandlocks/", db_diagnostic.trxandlocks),
     path("db_diagnostic/innodb_trx/", db_diagnostic.innodb_trx),
 
-    # ---- 实例参数 ----
-    path("param/list/", instance.param_list),
-    path("param/history/", instance.param_history),
-    path("param/edit/", instance.param_edit),
-    path("param/compare/", instance.param_compare),
+    # ---- 实例参数（已迁至 /api/v1/instance/params/） ----
 
 
     # ---- 归档 JSON ----

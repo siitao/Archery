@@ -127,13 +127,12 @@ export interface DatabaseRow {
   [key: string]: unknown;
 }
 
-/** 库列表（POST /instance/database/list/，{status,msg,rows}） */
+/** 库列表（POST /api/v1/instance/databases/，{status,msg,rows}） */
 export function fetchDatabases(instance_id: number, saved = 0) {
   return request
     .post<{ status: number; msg: string; rows?: DatabaseRow[] }>(
-      "/instance/database/list/",
-      form({ instance_id, saved }),
-      { headers: FORM_HEADERS }
+      "/api/v1/instance/databases/",
+      { instance_id, saved: String(saved) },
     )
     .then((res) => checkStatus(res.data).rows || []);
 }
@@ -146,9 +145,8 @@ export function createDatabase(params: {
 }) {
   return request
     .post<{ status: number; msg: string; data?: unknown }>(
-      "/instance/database/create/",
-      form(params),
-      { headers: FORM_HEADERS }
+      "/api/v1/instance/databases/create/",
+      params,
     )
     .then((res) => checkStatus(res.data).data);
 }
@@ -161,9 +159,8 @@ export function editDatabase(params: {
 }) {
   return request
     .post<{ status: number; msg: string; data?: unknown }>(
-      "/instance/database/edit/",
-      form(params),
-      { headers: FORM_HEADERS }
+      "/api/v1/instance/databases/edit/",
+      params,
     )
     .then((res) => checkStatus(res.data).data);
 }
@@ -181,12 +178,12 @@ export interface AccountRow {
   [key: string]: unknown;
 }
 
+/** 帐号列表（POST /api/v1/instance/accounts/，{status,msg,rows}） */
 export function fetchUsers(instance_id: number, saved = 0) {
   return request
     .post<{ status: number; msg: string; rows?: AccountRow[] }>(
-      "/instance/user/list",
-      form({ instance_id, saved }),
-      { headers: FORM_HEADERS }
+      "/api/v1/instance/accounts/",
+      { instance_id, saved: String(saved) },
     )
     .then((res) => checkStatus(res.data).rows || []);
 }
@@ -202,9 +199,8 @@ export function createAccount(params: {
 }) {
   return request
     .post<{ status: number; msg: string; data?: unknown }>(
-      "/instance/user/create/",
-      form(params),
-      { headers: FORM_HEADERS }
+      "/api/v1/instance/accounts/create/",
+      params,
     )
     .then((res) => checkStatus(res.data).data);
 }
@@ -218,9 +214,8 @@ export function editAccount(params: {
 }) {
   return request
     .post<{ status: number; msg: string; data?: unknown }>(
-      "/instance/user/edit/",
-      form(params),
-      { headers: FORM_HEADERS }
+      "/api/v1/instance/accounts/edit/",
+      params,
     )
     .then((res) => checkStatus(res.data).data);
 }
@@ -238,15 +233,8 @@ export function grantAccount(params: {
 }) {
   return request
     .post<{ status: number; msg: string; data?: unknown }>(
-      "/instance/user/grant/",
-      form({
-        ...params,
-        privs: params.privs,
-        db_name: params.db_name || [],
-        tb_name: params.tb_name || [],
-        col_name: params.col_name || [],
-      }),
-      { headers: FORM_HEADERS }
+      "/api/v1/instance/accounts/grant/",
+      params,
     )
     .then((res) => checkStatus(res.data).data);
 }
@@ -259,21 +247,21 @@ export const MONGO_ROLES = [
   "dbAdminAnyDatabase", "root",
 ];
 
-/** Mongo 账号授权（POST /instance/user/grant/，db_name_user=db.user + roles[]） */
+/** Mongo 账号授权（POST /api/v1/instance/accounts/grant/，db_name_user=db.user + roles[]） */
 export function grantMongoAccount(params: {
   instance_id: number;
   db_name_user: string;
   roles: string[];
 }) {
+  // Mongo roles 需要 POST 数组重复键，用 URLSearchParams 传 form
+  const f = new URLSearchParams();
+  f.append("instance_id", String(params.instance_id));
+  f.append("db_name_user", params.db_name_user);
+  params.roles.forEach((r) => f.append("roles[]", r));
   return request
     .post<{ status: number; msg: string; data?: unknown }>(
-      "/instance/user/grant/",
-      form({
-        instance_id: params.instance_id,
-        db_name_user: params.db_name_user,
-        "roles[]": params.roles,
-      }),
-      { headers: FORM_HEADERS }
+      "/api/v1/instance/accounts/grant/",
+      f,
     )
     .then((res) => checkStatus(res.data).data);
 }
@@ -286,9 +274,8 @@ export function resetPwd(params: {
 }) {
   return request
     .post<{ status: number; msg: string; data?: unknown }>(
-      "/instance/user/reset_pwd/",
-      form(params),
-      { headers: FORM_HEADERS }
+      "/api/v1/instance/accounts/reset_pwd/",
+      params,
     )
     .then((res) => checkStatus(res.data).data);
 }
@@ -301,9 +288,8 @@ export function lockAccount(params: {
 }) {
   return request
     .post<{ status: number; msg: string; data?: unknown }>(
-      "/instance/user/lock/",
-      form(params),
-      { headers: FORM_HEADERS }
+      "/api/v1/instance/accounts/lock/",
+      params,
     )
     .then((res) => checkStatus(res.data).data);
 }
@@ -314,9 +300,8 @@ export function deleteAccount(params: {
 }) {
   return request
     .post<{ status: number; msg: string; data?: unknown }>(
-      "/instance/user/delete/",
-      form(params),
-      { headers: FORM_HEADERS }
+      "/api/v1/instance/accounts/delete/",
+      params,
     )
     .then((res) => checkStatus(res.data).data);
 }
@@ -333,7 +318,7 @@ export interface ParamRow {
 }
 
 /**
- * 参数列表（POST /param/list/）。
+ * 参数列表（POST /api/v1/instance/params/）。
  * 成功返回**裸数组**，失败返回 {status,msg,data}。需按返回类型分支。
  */
 export async function fetchParamList(params: {
@@ -341,9 +326,7 @@ export async function fetchParamList(params: {
   editable?: number;
   search?: string;
 }): Promise<ParamRow[]> {
-  const { data } = await request.post<unknown>("/param/list/", form(params), {
-    headers: FORM_HEADERS,
-  });
+  const { data } = await request.post<unknown>("/api/v1/instance/params/", params);
   if (Array.isArray(data)) return data as ParamRow[];
   // 失败信封
   const env = data as { status?: number; msg?: string };
@@ -354,7 +337,7 @@ export async function fetchParamList(params: {
   return [];
 }
 
-/** 参数修改历史（POST /param/history/，{total,rows} 无 status） */
+/** 参数修改历史（POST /api/v1/instance/params/history/，{total,rows} 无 status） */
 export function fetchParamHistory(params: {
   instance_id: number;
   limit?: number;
@@ -363,14 +346,13 @@ export function fetchParamHistory(params: {
 }) {
   return request
     .post<{ total: number; rows: ParamRow[] }>(
-      "/param/history/",
-      form(params),
-      { headers: FORM_HEADERS }
+      "/api/v1/instance/params/history/",
+      params,
     )
     .then((res) => ({ total: res.data.total || 0, rows: res.data.rows || [] }));
 }
 
-/** 修改参数（POST /param/edit/，{status,msg,data}） */
+/** 修改参数（POST /api/v1/instance/params/edit/，{status,msg,data}） */
 export function editParam(params: {
   instance_id: number;
   variable_name: string;
@@ -378,9 +360,8 @@ export function editParam(params: {
 }) {
   return request
     .post<{ status: number; msg: string; data?: unknown }>(
-      "/param/edit/",
-      form(params),
-      { headers: FORM_HEADERS }
+      "/api/v1/instance/params/edit/",
+      params,
     )
     .then((res) => checkStatus(res.data).data);
 }
@@ -394,7 +375,7 @@ export interface ParamCompareResult {
   instance2_name: string;
 }
 
-/** 参数对比（POST /param/compare/，{status,msg,data:{rows,total,same_count,diff_count,...}}） */
+/** 参数对比（POST /api/v1/instance/params/compare/，{status,msg,data:{rows,total,same_count,diff_count,...}}） */
 export function compareParam(params: {
   instance_id1: number;
   instance_id2: number;
@@ -402,9 +383,8 @@ export function compareParam(params: {
 }) {
   return request
     .post<{ status: number; msg: string; data?: ParamCompareResult }>(
-      "/param/compare/",
-      form({ ...params, diff_only: params.diff_only ? "true" : "false" }),
-      { headers: FORM_HEADERS }
+      "/api/v1/instance/params/compare/",
+      { ...params, diff_only: params.diff_only ? "true" : "false" },
     )
     .then((res) => checkStatus(res.data).data as ParamCompareResult);
 }
