@@ -15,7 +15,7 @@ from . import api_user, api_instance, api_workflow, api_sqlquery, api_document, 
 
 router = routers.DefaultRouter()
 router.register(
-    "v1/dictionary",
+    "dictionary",
     api_dictionary.DataDictionaryViewSet,
     basename="dictionary",
 )
