@@ -14,8 +14,18 @@ import { fetchResourceGroups, type ResourceGroupRow } from "@/api/group";
 
 const loading = ref(false);
 const saving = ref(false);
-// eslint-disable-next-line @typescript-eslint/no-explicit-any -- 动态表单渲染器混合类型
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 const configValues = ref<Record<string, any>>({});
+
+// 分区图标（Element Plus 图标名，auto-import 生效）
+const SECTION_ICONS: Record<string, string> = {
+  "goInception 配置": "Monitor",
+  "功能模块配置": "Setting",
+  "通知配置": "Bell",
+  "OIDC 配置": "Lock",
+  "OPENAI 配置": "MagicStick",
+  "其他配置": "More",
+};
 
 // 动态选项数据
 const dynamicOptions = ref<Record<string, { value: string; label: string }[]>>({});
@@ -53,7 +63,6 @@ const sections = computed(() => {
         const subFields = sectionFields.filter((f) => f.subsection === sub);
         if (subFields.length) groups.push({ key: sub, fields: subFields });
       }
-      // 不属于任何子分区的字段
       const leftover = sectionFields.filter((f) => !f.subsection && !subs.includes(f.subsection || ""));
       if (leftover.length) groups.push({ key: "_", fields: leftover });
     } else {
@@ -64,7 +73,12 @@ const sections = computed(() => {
   return result;
 });
 
-// 多选字段：存储值是逗号字符串，表单需要数组
+// 统计每个分区可见字段数
+function sectionFieldCount(sectionName: string): number {
+  return CONFIG_FIELDS.filter((f) => f.section === sectionName).length;
+}
+
+// 多选字段
 function isMultiselectArray(field: ConfigField): boolean {
   return field.type === "multiselect";
 }
@@ -73,7 +87,6 @@ async function loadConfig() {
   loading.value = true;
   try {
     const data = await fetchConfig();
-    // 多选字段：逗号字符串 → 数组
     const values: Record<string, any> = {};
     for (const f of CONFIG_FIELDS) {
       const raw = data[f.key];
@@ -123,6 +136,9 @@ async function onSave() {
   }
 }
 
+// 默认展开第一个分区
+const activeSections = ref<string[]>([CONFIG_SECTIONS[0]]);
+
 onMounted(() => {
   loadConfig();
   loadDynamicOptions();
@@ -131,134 +147,265 @@ onMounted(() => {
 
 <template>
   <div v-loading="loading" class="config-page">
-    <el-card shadow="never">
-      <template #header>
-        <div style="display:flex;align-items:center;justify-content:space-between">
-          <span>系统配置项管理（{{ CONFIG_FIELDS.length }} 项）</span>
-          <el-button type="primary" :loading="saving" @click="onSave">保存全部配置</el-button>
+    <!-- 顶部工具栏 -->
+    <el-affix :offset="60">
+      <div class="config-toolbar">
+        <div class="toolbar-left">
+          <span class="toolbar-title">系统配置项管理</span>
+          <el-tag size="small" type="info" round>{{ CONFIG_FIELDS.length }} 项</el-tag>
         </div>
-      </template>
+        <el-button type="primary" :loading="saving" @click="onSave" round>
+          保存全部配置
+        </el-button>
+      </div>
+    </el-affix>
 
-      <el-collapse>
+    <el-form label-width="140px" label-position="right" class="config-form">
+      <el-collapse v-model="activeSections">
         <el-collapse-item
           v-for="section in sections"
           :key="section.name"
-          :title="section.name"
           :name="section.name"
         >
+          <template #title>
+            <div class="section-header">
+              <el-icon class="section-icon"><component :is="SECTION_ICONS[section.name] || 'Folder'" /></el-icon>
+              <span class="section-name">{{ section.name }}</span>
+              <el-tag size="small" effect="plain">{{ sectionFieldCount(section.name) }}</el-tag>
+            </div>
+          </template>
+
           <template v-for="group in section.groups" :key="group.key">
+            <!-- 子分区标题 -->
             <div v-if="group.key !== section.name && group.key !== '_'" class="subsection-title">
+              <span class="sub-dot"></span>
               {{ group.key }}
             </div>
-            <div v-for="field in group.fields" :key="field.key">
-              <el-form-item
-                v-if="isVisible(field)"
-                :label="field.label"
-                class="config-field"
+
+            <!-- 字段列表（双列网格） -->
+            <el-row :gutter="16">
+              <el-col
+                v-for="field in group.fields.filter(isVisible)"
+                :key="field.key"
+                :span="12"
               >
-                <!-- boolean -->
-                <el-switch
-                  v-if="field.type === 'boolean'"
-                  v-model="configValues[field.key]"
-                />
-                <!-- number -->
-                <el-input-number
-                  v-else-if="field.type === 'number'"
-                  v-model="configValues[field.key]"
-                  controls-position="right"
-                  style="width: 200px"
-                />
-                <!-- password -->
-                <el-input
-                  v-else-if="field.type === 'password'"
-                  v-model="configValues[field.key]"
-                  type="password"
-                  show-password
-                  :placeholder="field.desc || ''"
-                  style="max-width: 400px"
-                />
-                <!-- select -->
-                <el-select
-                  v-else-if="field.type === 'select' && !field.dynamic"
-                  v-model="configValues[field.key]"
-                  filterable
-                  style="width: 280px"
-                >
-                  <el-option
-                    v-for="o in getOptions(field)"
-                    :key="o.value"
-                    :label="o.label"
-                    :value="o.value"
-                  />
-                </el-select>
-                <!-- dynamic select -->
-                <el-select
-                  v-else-if="field.type === 'select' && field.dynamic"
-                  v-model="configValues[field.key]"
-                  filterable
-                  clearable
-                  style="width: 280px"
-                >
-                  <el-option
-                    v-for="o in getOptions(field)"
-                    :key="o.value"
-                    :label="o.label"
-                    :value="o.value"
-                  />
-                </el-select>
-                <!-- multiselect -->
-                <el-select
-                  v-else-if="field.type === 'multiselect'"
-                  v-model="configValues[field.key]"
-                  multiple
-                  filterable
-                  style="width: 400px"
-                >
-                  <el-option
-                    v-for="o in getOptions(field)"
-                    :key="o.value"
-                    :label="o.label"
-                    :value="o.value"
-                  />
-                </el-select>
-                <!-- text (default) -->
-                <el-input
-                  v-else
-                  v-model="configValues[field.key]"
-                  :placeholder="field.desc || ''"
-                  style="max-width: 400px"
-                />
-                <span v-if="field.desc && field.type !== 'text' && field.type !== 'password'" class="field-hint">
-                  {{ field.desc }}
-                </span>
-              </el-form-item>
-            </div>
+                <el-form-item :label="field.label">
+                  <div class="field-row">
+                    <!-- boolean -->
+                    <el-switch
+                      v-if="field.type === 'boolean'"
+                      v-model="configValues[field.key]"
+                      inline-prompt
+                      active-text="开"
+                      inactive-text="关"
+                    />
+                    <!-- number -->
+                    <el-input-number
+                      v-else-if="field.type === 'number'"
+                      v-model="configValues[field.key]"
+                      controls-position="right"
+                      class="field-input"
+                    />
+                    <!-- password -->
+                    <el-input
+                      v-else-if="field.type === 'password'"
+                      v-model="configValues[field.key]"
+                      type="password"
+                      show-password
+                      :placeholder="field.desc || ''"
+                      class="field-input"
+                    />
+                    <!-- select -->
+                    <el-select
+                      v-else-if="field.type === 'select'"
+                      v-model="configValues[field.key]"
+                      filterable
+                      clearable
+                      class="field-input"
+                    >
+                      <el-option
+                        v-for="o in getOptions(field)"
+                        :key="o.value"
+                        :label="o.label"
+                        :value="o.value"
+                      />
+                    </el-select>
+                    <!-- multiselect -->
+                    <el-select
+                      v-else-if="field.type === 'multiselect'"
+                      v-model="configValues[field.key]"
+                      multiple
+                      filterable
+                      collapse-tags
+                      collapse-tags-tooltip
+                      class="field-input"
+                    >
+                      <el-option
+                        v-for="o in getOptions(field)"
+                        :key="o.value"
+                        :label="o.label"
+                        :value="o.value"
+                      />
+                    </el-select>
+                    <!-- text (default) -->
+                    <el-input
+                      v-else
+                      v-model="configValues[field.key]"
+                      :placeholder="field.desc || ''"
+                      class="field-input"
+                    />
+                    <!-- 描述 tooltip -->
+                    <el-tooltip
+                      v-if="field.desc"
+                      :content="field.desc"
+                      placement="top"
+                    >
+                      <el-icon class="field-help"><QuestionFilled /></el-icon>
+                    </el-tooltip>
+                  </div>
+                </el-form-item>
+              </el-col>
+            </el-row>
           </template>
         </el-collapse-item>
       </el-collapse>
-    </el-card>
+    </el-form>
   </div>
 </template>
 
 <style scoped lang="scss">
 .config-page {
-  .subsection-title {
-    margin: 16px 0 8px;
-    padding-bottom: 4px;
-    font-weight: 600;
-    font-size: 14px;
-    color: var(--el-text-color-primary);
-    border-bottom: 1px solid var(--el-border-color-lighter);
+  .config-toolbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 20px;
+    margin-bottom: 16px;
+    background: var(--el-bg-color);
+    border: 1px solid var(--el-border-color-light);
+    border-radius: 8px;
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.04);
   }
 
-  .config-field {
+  .toolbar-left {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .toolbar-title {
+    font-size: 16px;
+    font-weight: 600;
+  }
+
+  // 分区折叠面板
+  :deep(.el-collapse) {
+    border: none;
+  }
+
+  :deep(.el-collapse-item__header) {
+    height: 48px;
+    padding: 0 16px;
+    border: 1px solid var(--el-border-color-light);
+    border-radius: 8px;
+    margin-bottom: 4px;
+    font-size: 15px;
+    font-weight: 600;
+    transition: all 0.2s;
+
+    &:hover {
+      border-color: var(--el-color-primary-light-5);
+      background: var(--el-color-primary-light-9);
+    }
+
+    &.is-active {
+      border-bottom-left-radius: 0;
+      border-bottom-right-radius: 0;
+      margin-bottom: 0;
+    }
+  }
+
+  :deep(.el-collapse-item__wrap) {
+    border: 1px solid var(--el-border-color-light);
+    border-top: none;
+    border-radius: 0 0 8px 8px;
     margin-bottom: 12px;
   }
 
-  .field-hint {
-    margin-left: 12px;
-    font-size: 12px;
+  :deep(.el-collapse-item__content) {
+    padding: 16px 20px 4px;
+  }
+
+  .section-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+  }
+
+  .section-icon {
+    font-size: 18px;
+  }
+
+  .section-name {
+    flex: 1;
+  }
+
+  // 子分区标题
+  .subsection-title {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 8px 0 12px;
+    padding-bottom: 6px;
+    font-weight: 600;
+    font-size: 13px;
     color: var(--el-text-color-secondary);
+    border-bottom: 1px dashed var(--el-border-color-lighter);
+
+    &:first-child {
+      margin-top: 0;
+    }
+  }
+
+  .sub-dot {
+    width: 4px;
+    height: 14px;
+    border-radius: 2px;
+    background: var(--el-color-primary);
+  }
+
+  // 字段行
+  .field-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    width: 100%;
+  }
+
+  .field-input {
+    flex: 1;
+    max-width: 320px;
+  }
+
+  .field-help {
+    color: var(--el-text-color-placeholder);
+    cursor: help;
+    font-size: 15px;
+    flex-shrink: 0;
+
+    &:hover {
+      color: var(--el-color-primary);
+    }
+  }
+
+  // 表单项
+  :deep(.el-form-item) {
+    margin-bottom: 14px;
+  }
+
+  :deep(.el-form-item__label) {
+    font-size: 13px;
   }
 }
 </style>
