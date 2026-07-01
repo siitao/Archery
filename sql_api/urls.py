@@ -11,9 +11,14 @@ from drf_spectacular.views import (
     SpectacularRedocView,
     SpectacularSwaggerView,
 )
-from . import api_user, api_instance, api_workflow, api_sqlquery, api_document, api_query_priv, api_archiver, api_dashboard, api_slowlog, api_config
+from . import api_user, api_instance, api_workflow, api_sqlquery, api_document, api_query_priv, api_archiver, api_dashboard, api_slowlog, api_config, api_dictionary
 
 router = routers.DefaultRouter()
+router.register(
+    "v1/dictionary",
+    api_dictionary.DataDictionaryViewSet,
+    basename="dictionary",
+)
 
 urlpatterns = [
     path("v1/", include(router.urls)),

@@ -18,7 +18,6 @@ from sql import (
     db_diagnostic,
     resource_group,
     binlog,
-    data_dictionary,
     archiver,
     audit_log,
     offlinedownload,
@@ -110,28 +109,6 @@ urlpatterns = [
     path("param/edit/", instance.param_edit),
     path("param/compare/", instance.param_compare),
 
-    # ---- 数据字典 ----
-    path("data_dictionary/table_list/", data_dictionary.table_list),
-    path("data_dictionary/table_info/", data_dictionary.table_info),
-    path("data_dictionary/view_list/", data_dictionary.view_list),
-    path("data_dictionary/view_info/", data_dictionary.view_info),
-    path("data_dictionary/trigger_list/", data_dictionary.trigger_list),
-    path("data_dictionary/trigger_info/", data_dictionary.trigger_info),
-    path(
-        "data_dictionary/procedure_list/", data_dictionary.procedure_list
-    ),
-    path(
-        "data_dictionary/procedure_info/", data_dictionary.procedure_info
-    ),
-    path(
-        "data_dictionary/function_list/", data_dictionary.function_list
-    ),
-    path(
-        "data_dictionary/function_info/", data_dictionary.function_info
-    ),
-    path("data_dictionary/event_list/", data_dictionary.event_list),
-    path("data_dictionary/event_info/", data_dictionary.event_info),
-    path("data_dictionary/export/", data_dictionary.export),
 
     # ---- 归档 JSON ----
     path("archive/list/", archiver.archive_list),

@@ -55,7 +55,7 @@ export function analyzeSql(params: {
     .then((res) => checkStatus(res.data).data || "");
 }
 
-// ============ 数据字典 data_dictionary.py（全 GET） ============
+// ============ 数据字典（DRF ViewSet /api/v1/dictionary/）============
 
 export type DictionaryObjectType =
   | "table"
@@ -65,29 +65,25 @@ export type DictionaryObjectType =
   | "function"
   | "event";
 
-const DD_TYPE_MAP: Record<DictionaryObjectType, { list: string; info: string; nameParam: string }> = {
-  table: { list: "table_list", info: "table_info", nameParam: "tb_name" },
-  view: { list: "view_list", info: "view_info", nameParam: "view_name" },
-  trigger: { list: "trigger_list", info: "trigger_info", nameParam: "trigger_name" },
-  procedure: { list: "procedure_list", info: "procedure_info", nameParam: "procedure_name" },
-  function: { list: "function_list", info: "function_info", nameParam: "function_name" },
-  event: { list: "event_list", info: "event_info", nameParam: "event_name" },
+const DD_TYPE_SLUG: Record<DictionaryObjectType, string> = {
+  table: "tables", view: "views", trigger: "triggers",
+  procedure: "procedures", function: "functions", event: "events",
 };
 
-/** 对象列表（GET /data_dictionary/<type>_list/）
-
-    实际后端返回格式:
-    { status:0, data: { "a": [["name","comment"],...], "n": [...] } }
-    即按首字母分组、每项 [name, comment]。
-    兼容旧格式 rows: [{name}]。
-*/
+/** 对象列表（GET /api/v1/dictionary/<slug>/）
+ *
+ *  后端返回格式:
+ *    { status:0, data: { "a": [["name","comment"],...], "b": [...] } }
+ *  即按首字母分组、每项 [name, comment]。
+ *  兼容旧格式 rows: [{name}]。
+ */
 export function fetchDictionaryObjects(params: {
   instance_name: string;
   db_name: string;
   db_type?: string;
   object_type: DictionaryObjectType;
 }): Promise<{ name: string; comment: string }[]> {
-  const path = `/data_dictionary/${DD_TYPE_MAP[params.object_type].list}/`;
+  const path = `/api/v1/dictionary/${DD_TYPE_SLUG[params.object_type]}/`;
   return request
     .get<{ status: number; msg: string; rows?: [string, string][]; data?: Record<string, [string, string][]> | { name: string }[] }>(
       path,
@@ -101,7 +97,7 @@ export function fetchDictionaryObjects(params: {
     )
     .then((res) => {
       const e = checkStatus(res.data);
-      // 新格式：data 是按首字母分组的对象 { letter: [[name, comment], ...] }
+      // data 是按首字母分组的对象 { letter: [[name, comment], ...] }
       if (e.data && !Array.isArray(e.data) && typeof e.data === "object") {
         return Object.values(e.data)
           .flat()
@@ -117,7 +113,7 @@ export function fetchDictionaryObjects(params: {
     });
 }
 
-/** 对象定义（GET /data_dictionary/<type>_info/） */
+/** 对象定义（GET /api/v1/dictionary/<slug>/info/） */
 export function fetchDictionaryInfo(params: {
   instance_name: string;
   db_name: string;
@@ -125,27 +121,33 @@ export function fetchDictionaryInfo(params: {
   object_type: DictionaryObjectType;
   object_name: string;
 }) {
-  const meta = DD_TYPE_MAP[params.object_type];
-  const path = `/data_dictionary/${meta.info}/`;
+  const slug = DD_TYPE_SLUG[params.object_type];
+  const path = `/api/v1/dictionary/${slug}/info/`;
+  // 各类型的参数名不同：tb_name / view_name / trigger_name / proc_name / func_name / event_name
+  const nameParam =
+    params.object_type === "table" ? "tb_name"
+    : params.object_type === "procedure" ? "proc_name"
+    : params.object_type === "function" ? "func_name"
+    : `${params.object_type}_name`;
   return request
     .get<{ status: number; msg: string; data?: string; rows?: Record<string, unknown>[] }>(path, {
       params: {
         instance_name: params.instance_name,
         db_name: params.db_name,
         db_type: params.db_type || "",
-        [meta.nameParam]: params.object_name,
+        [nameParam]: params.object_name,
       },
     })
     .then((res) => checkStatus(res.data).data || "");
 }
 
-/** 导出数据字典（GET /data_dictionary/export/，返回 HTML 文件，blob 下载） */
+/** 导出数据字典（GET /api/v1/dictionary/export/，返回 HTML 文件 blob 下载） */
 export function exportDictionary(params: {
   instance_name: string;
   db_name: string;
   db_type?: string;
 }) {
-  return request.get<Blob>("/data_dictionary/export/", {
+  return request.get<Blob>("/api/v1/dictionary/export/", {
     params: {
       instance_name: params.instance_name,
       db_name: params.db_name,
