@@ -36,7 +36,7 @@ const form = reactive({
 const sqlContent = ref("");
 
 const instanceOptions = ref<QueryInstanceRow[]>([]);
-const dbOptions = ref<string[]>([]);
+const dbOptions = ref<Array<string | { value: string; text: string }>>([]);
 const schemaOptions = ref<string[]>([]);
 const tableOptions = ref<string[]>([]);
 const columnOptions = ref<string[]>([]);
@@ -60,7 +60,7 @@ const instanceGroups = computed(() => {
 
 // 补全数据（传给 SqlEditor）
 const completers = computed<SqlCompleters>(() => ({
-  databases: dbOptions.value,
+  databases: dbOptions.value.map((d) => (typeof d === "object" ? d.text : d)),
   schemas: schemaOptions.value,
   tables: tableOptions.value,
   columns: columnOptions.value,
@@ -191,7 +191,9 @@ async function onAiGenerate() {
       instance_name: form.instance_name,
       db_name: form.db_name,
       schema_name: form.schema_name || undefined,
+      tb_name: form.table_name || undefined,
     });
+    if (!sql) return ElMessage.warning("AI 未返回有效 SQL");
     editorRef.value?.insert(sql);
     ElMessage.success("已生成并插入 SQL");
   } catch {
@@ -230,7 +232,13 @@ async function onInstanceChange() {
   }
 }
 
+/** Redis 返回 db_name 为 {value, text} 对象；提取 value 保证后端收到字符串 */
+function normalizeDbName(db: unknown): string {
+  return db && typeof db === "object" ? (db as any).value ?? "" : (db as string);
+}
+
 async function onDbChange() {
+  form.db_name = normalizeDbName(form.db_name);
   tableOptions.value = [];
   columnOptions.value = [];
   form.table_name = "";
@@ -533,11 +541,17 @@ onMounted(() => {
               <el-select
                 v-model="form.db_name"
                 filterable
+                value-key="value"
                 placeholder="选择库"
                 style="width: 100%"
                 @change="onDbChange"
               >
-                <el-option v-for="d in dbOptions" :key="d" :label="d" :value="d" />
+                <el-option
+                  v-for="d in dbOptions"
+                  :key="typeof d === 'object' ? d.value : d"
+                  :label="typeof d === 'object' ? d.text : d"
+                  :value="typeof d === 'object' ? d.value : d"
+                />
               </el-select>
             </el-form-item>
 
@@ -586,7 +600,10 @@ onMounted(() => {
 
             <el-form-item label="操作">
               <div class="action-btns">
-                <el-button @click="onBeautify">美化</el-button>
+                <el-button
+                  type="success"
+                  @click="onBeautify"
+                >美化</el-button>
                 <el-button v-if="canExecute" type="primary" @click="doExecute(false)">
                   执行
                 </el-button>
@@ -824,8 +841,14 @@ onMounted(() => {
 
 .action-btns {
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   gap: 6px;
+  width: 100%;
+}
+/* 执行 / 执行计划：等宽拉伸 */
+.action-btns :deep(.el-button) {
+  flex: 0 0 auto;
+  margin: 0;
 }
 
 .ai-block {
