@@ -7,11 +7,11 @@ import {
   fetchResourceGroups,
   fetchGroupInstances,
   fetchGroupAuditors,
+  fetchUserInstances,
   type ResourceGroupRow,
   type GroupInstanceRow,
 } from "@/api/group";
 import { fetchQueryResources } from "@/api/sqlquery";
-import { fetchInstances, type InstanceRow } from "@/api/instance";
 import {
   fetchArchiveList,
   archiveApply,
@@ -31,7 +31,7 @@ const router = useRouter();
 const loading = ref(false);
 const list = ref<ArchiveRow[]>([]);
 const total = ref(0);
-const instanceOptions = ref<InstanceRow[]>([]);
+const instanceOptions = ref<GroupInstanceRow[]>([]);
 
 const query = reactive({
   search: "",
@@ -43,8 +43,9 @@ const query = reactive({
 
 async function loadInstances() {
   try {
-    const { data } = await fetchInstances({ size: 1000 });
-    instanceOptions.value = data.results || [];
+    // 走用户级接口（按资源组授权过滤），避免普通用户触发 403
+    const rows = await fetchUserInstances();
+    instanceOptions.value = rows || [];
   } catch {
     // 拦截器已提示
   }

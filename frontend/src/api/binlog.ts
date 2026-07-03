@@ -2,7 +2,7 @@ import request from "@/utils/request";
 import { ElMessage } from "element-plus";
 
 /**
- * My2SQL（binlog 解析）。两个旧接口均为 POST form + {status,msg,data} 信封。
+ * My2SQL（binlog 解析）。两个旧接口均通过 /api/v1/binlog/* POST form + {status,msg,data} 信封。
  * 复用 checkStatus/form 模式。数组参数 only_tables[]/sql_type[] 用 URLSearchParams 重复键。
  */
 
@@ -40,7 +40,7 @@ export interface BinlogFile {
 export function fetchBinlogList(instance_name: string) {
   return request
     .post<{ status: number; msg: string; data: BinlogFile[] }>(
-      "/binlog/list/",
+      "/api/v1/binlog/list/",
       form({ instance_name }),
       { headers: FORM_HEADERS }
     )
@@ -79,7 +79,7 @@ export function runMy2sql(params: {
   const bool = (v?: boolean) => (v ? "true" : "false");
   return request
     .post<{ status: number; msg: string; data: My2SqlRow[] }>(
-      "/binlog/my2sql/",
+      "/api/v1/binlog/my2sql/",
       form({
         instance_name: params.instance_name,
         save_sql: bool(params.save_sql),

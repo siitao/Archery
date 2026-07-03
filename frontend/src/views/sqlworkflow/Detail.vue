@@ -4,7 +4,7 @@ import { useRoute } from "vue-router";
 import { ElMessage, ElMessageBox } from "element-plus";
 import { ArrowRight } from "@element-plus/icons-vue";
 import { useAuthStore } from "@/stores/auth";
-import { fetchInstances } from "@/api/instance";
+import { fetchUserInstances } from "@/api/group";
 import {
   fetchWorkflowDetail,
   fetchWorkflowLogs,
@@ -49,9 +49,10 @@ let pollTimer: number | null = null;
 
 async function loadInstances() {
   try {
-    const { data } = await fetchInstances({ size: 1000 });
+    // 走用户级接口（按资源组授权过滤），避免普通用户触发 403
+    const rows = await fetchUserInstances();
     instanceMap.value = Object.fromEntries(
-      (data.results || []).map((i) => [i.id, i.instance_name])
+      (rows || []).map((i) => [i.id, i.instance_name])
     );
   } catch {
     // 拦截器已提示

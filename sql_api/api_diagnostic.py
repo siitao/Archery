@@ -84,7 +84,7 @@ class ProcessView(APIView):
         if query_result:
             if not query_result.error:
                 return JsonResponse(
-                    {"status": 0, "msg": "ok", "rows": query_result.to_dict()},
+                    _encode({"status": 0, "msg": "ok", "rows": query_result.to_dict()}),
                     safe=False,
                 )
             return JsonResponse({"status": 1, "msg": query_result.error})

@@ -84,7 +84,7 @@ export interface ApplyRow {
   group_name: string;
 }
 
-/** 申请列表（POST /query/applylist/，{total,rows}） */
+/** 申请列表（POST /api/v1/query/applylist/，{total,rows}） */
 export function fetchApplyList(params: {
   limit: number;
   offset: number;
@@ -92,7 +92,7 @@ export function fetchApplyList(params: {
 }) {
   return request
     .post<{ total: number; rows: ApplyRow[] }>(
-      "/query/applylist/",
+      "/api/v1/query/applylist/",
       form({ limit: params.limit, offset: params.offset, search: params.search ?? "" }),
       { headers: FORM_HEADERS }
     )
@@ -113,7 +113,7 @@ export function applyForPrivileges(params: {
 }) {
   return request
     .post<{ status: number; msg: string; data: unknown }>(
-      "/query/applyforprivileges/",
+      "/api/v1/query/applyforprivileges/",
       form({
         title: params.title,
         instance_name: params.instance_name,
@@ -151,7 +151,7 @@ export function fetchUserPrivileges(params: {
 }) {
   return request
     .post<{ total: number; rows: UserPrivRow[] }>(
-      "/query/userprivileges/",
+      "/api/v1/query/userprivileges/",
       form({
         limit: params.limit,
         offset: params.offset,
@@ -172,7 +172,7 @@ export function modifyPrivilege(params: {
 }) {
   return request
     .post<{ status: number; msg: string; data: unknown }>(
-      "/query/modifyprivileges/",
+      "/api/v1/query/modifyprivileges/",
       form(params),
       { headers: FORM_HEADERS }
     )

@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from "vue";
 import { ElMessage } from "element-plus";
-import { fetchConfig, saveConfig, checkGoInception } from "@/api/config";
+import { useAuthStore } from "@/stores/auth";
+import { fetchConfig, saveConfig, checkGoInception, checkAIConnection } from "@/api/config";
 import {
   CONFIG_SECTIONS,
   CONFIG_SUBSECTIONS,
@@ -11,6 +12,8 @@ import {
 import { fetchInstanceTags, type InstanceTagRow } from "@/api/instance";
 import { fetchGroups, type AuthGroupRow } from "@/api/user";
 import { fetchResourceGroups, type ResourceGroupRow } from "@/api/group";
+
+const auth = useAuthStore();
 
 const loading = ref(false);
 const saving = ref(false);
@@ -23,7 +26,7 @@ const SECTION_ICONS: Record<string, string> = {
   "功能模块配置": "Setting",
   "通知配置": "Bell",
   "OIDC 配置": "Lock",
-  "OPENAI 配置": "MagicStick",
+  "AI 配置": "MagicStick",
   "其他配置": "More",
 };
 
@@ -106,9 +109,13 @@ async function loadConfig() {
 
 async function loadDynamicOptions() {
   try {
+    // fetchGroups 走 /api/v1/user/group/（超管专用），非超管直接跳过避免 403
+    const groupsPromise = auth.isSuperuser
+      ? fetchGroups().catch(() => [])
+      : Promise.resolve([] as AuthGroupRow[]);
     const [tags, groups, resGroups] = await Promise.all([
       fetchInstanceTags().catch(() => []),
-      fetchGroups().catch(() => []),
+      groupsPromise,
       fetchResourceGroups({ size: 1000 }).then((r) => r.data.results || []).catch(() => []),
     ]);
     dynamicOptions.value = {
@@ -156,6 +163,24 @@ async function onCheckGoInception() {
     ElMessage.error(`连接失败：${(e as Error).message}`);
   } finally {
     checkingGoInception.value = false;
+  }
+}
+
+const checkingAI = ref(false);
+
+async function onCheckAI() {
+  checkingAI.value = true;
+  try {
+    await checkAIConnection({
+      openai_base_url: String(configValues.value.openai_base_url ?? ""),
+      openai_api_key: String(configValues.value.openai_api_key ?? ""),
+      default_chat_model: String(configValues.value.default_chat_model ?? ""),
+    });
+    ElMessage.success("AI 服务连接成功，请点击保存按钮生效！");
+  } catch (e) {
+    ElMessage.error(`连接失败：${(e as Error).message}`);
+  } finally {
+    checkingAI.value = false;
   }
 }
 
@@ -299,6 +324,17 @@ onMounted(() => {
                 测试连接
               </el-button>
               <span class="field-hint">测试 goInception 和备份库连接是否正常</span>
+            </div>
+            <!-- AI 配置分区测试连接按钮 -->
+            <div v-if="section.name === 'AI 配置'" class="check-row">
+              <el-button
+                type="success"
+                :loading="checkingAI"
+                @click="onCheckAI"
+              >
+                测试连接
+              </el-button>
+              <span class="field-hint">测试 AI 服务（地址 / API Key / 模型）是否可用</span>
             </div>
           </template>
         </el-collapse-item>

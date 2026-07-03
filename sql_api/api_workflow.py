@@ -110,12 +110,14 @@ class WorkflowList(generics.ListAPIView):
         elif user.has_perm("sql.sql_review") or user.has_perm(
             "sql.sql_execute_for_resource_group"
         ):
-            filter_dict["group_id__in"] = [
+            # group_id 属于关联的 SqlWorkflow，需跨表（SqlWorkflowContent.workflow）
+            filter_dict["workflow__group_id__in"] = [
                 group.group_id for group in user_groups(user)
             ]
         # 其他人只能查看自己提交的工单
         else:
-            filter_dict["engineer"] = user.username
+            # engineer 属于关联的 SqlWorkflow，需跨表
+            filter_dict["workflow__engineer"] = user.username
         return (
             SqlWorkflowContent.objects.filter(**filter_dict)
             .select_related("workflow")
@@ -195,13 +197,16 @@ class WorkflowAuditList(generics.ListAPIView):
         description="列出指定用户待审核清单（过滤，分页）",
     )
     def post(self, request):
+        # 未传 engineer 时默认取当前登录用户，避免前端可随意查询他人待办
+        engineer = request.data.get("engineer") or request.user.username
+
         # 参数验证
-        serializer = WorkflowAuditSerializer(data=request.data)
+        serializer = WorkflowAuditSerializer(data={"engineer": engineer})
         if not serializer.is_valid():
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
         # 先获取用户所在资源组列表
-        user = Users.objects.get(username=request.data["engineer"])
+        user = Users.objects.get(username=engineer)
         group_list = user_groups(user)
         group_ids = [group.group_id for group in group_list]
 

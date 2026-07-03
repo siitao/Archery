@@ -13,6 +13,7 @@ from dateutil.parser import parse
 from bson.objectid import ObjectId
 from bson.int64 import Int64
 from bson.regex import Regex
+from bson.binary import Binary
 
 from sql.utils.data_masking import data_masking
 
@@ -21,6 +22,22 @@ from .models import ResultSet, ReviewSet, ReviewResult
 from common.config import SysConfig
 
 logger = logging.getLogger("default")
+
+
+def _sanitize_mongo_doc(doc):
+    """递归将 MongoDB 文档中的 Binary 等不可 JSON 序列化的类型转为 Python 原生类型。"""
+    if isinstance(doc, dict):
+        return {k: _sanitize_mongo_doc(v) for k, v in doc.items()}
+    if isinstance(doc, list):
+        return [_sanitize_mongo_doc(v) for v in doc]
+    if isinstance(doc, Binary):
+        try:
+            return doc.decode("utf-8")
+        except Exception:
+            import base64
+
+            return base64.b64encode(bytes(doc)).decode("ascii")
+    return doc
 
 
 # 自定义异常
@@ -1694,7 +1711,7 @@ class MongoEngine(EngineBase):
                         if not "clientMetadata" in operation:
                             processlists.append(operation)
 
-            result_set.rows = processlists
+            result_set.rows = [_sanitize_mongo_doc(doc) for doc in processlists]
         except Exception as e:
             logger.warning(f"mongodb获取连接信息错误，错误信息{traceback.format_exc()}")
             result_set.error = str(e)

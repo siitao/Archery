@@ -1,9 +1,15 @@
 <script setup lang="ts">
-import { ref } from "vue";
+import { ref, computed, onMounted } from "vue";
 import { ElMessage } from "element-plus";
+import { marked } from "marked";
+import DOMPurify from "dompurify";
 import SqlEditor from "@/components/SqlEditor.vue";
-import { generateAnalyze, analyzeSql } from "@/api/phase2";
+import { generateAnalyze, analyzeSql, analyzeSqlByAI } from "@/api/phase2";
+import { checkOpenai } from "@/api/sqlquery";
 import TruncateCell from "@/components/TruncateCell.vue";
+
+// gfm 表格渲染
+marked.setOptions({ gfm: true, breaks: false });
 
 const sqlText = ref("");
 const loading = ref(false);
@@ -12,9 +18,12 @@ const loading = ref(false);
 const analyzeRows = ref<Record<string, unknown>[]>([]);
 const analyzeColumns = ref<string[]>([]);
 
-// analyze 深度报告（markdown/html）
+// analyze / AI 深度报告（markdown/html）
 const report = ref("");
 const reportLoading = ref(false);
+
+// OpenAI 探测
+const openaiEnabled = ref(false);
 
 /** SQL 长文本列名集合 */
 const SQL_COLUMNS = new Set(["sql", "sqltext", "text", "errormessage", "message", "detail"]);
@@ -55,6 +64,35 @@ async function onAnalyze() {
     reportLoading.value = false;
   }
 }
+
+async function onAIAnalyze() {
+  if (!sqlText.value.trim()) return ElMessage.warning("请输入 SQL");
+  reportLoading.value = true;
+  report.value = "";
+  try {
+    report.value = await analyzeSqlByAI(sqlText.value);
+  } catch {
+    // 拦截器已提示
+  } finally {
+    reportLoading.value = false;
+  }
+}
+
+/** report（markdown）→ 安全 HTML */
+const reportHtml = computed(() => {
+  if (!report.value) return "";
+  const raw = marked.parse(report.value, { async: false }) as string;
+  return DOMPurify.sanitize(raw);
+});
+
+onMounted(async () => {
+  try {
+    const { data } = await checkOpenai();
+    openaiEnabled.value = data.status === 0 && !!data.data?.openai;
+  } catch {
+    openaiEnabled.value = false;
+  }
+});
 </script>
 
 <template>
@@ -65,6 +103,20 @@ async function onAnalyze() {
       <div class="actions">
         <el-button type="primary" @click="onGenerate">生成分析</el-button>
         <el-button @click="onAnalyze" :loading="reportLoading">深度分析（SOAR）</el-button>
+        <el-tooltip
+          :content="openaiEnabled ? '' : '请先在系统配置的 AI 配置中填写 API Key'"
+          :disabled="openaiEnabled"
+          placement="top"
+        >
+          <span>
+            <el-button
+              type="success"
+              :loading="reportLoading"
+              :disabled="!openaiEnabled"
+              @click="onAIAnalyze"
+            >AI 分析</el-button>
+          </span>
+        </el-tooltip>
       </div>
     </el-card>
 
@@ -88,7 +140,7 @@ async function onAnalyze() {
 
     <el-card v-if="report" shadow="never">
       <template #header>深度分析报告</template>
-      <div class="report" v-html="report" />
+      <div class="report" v-html="reportHtml" />
     </el-card>
   </div>
 </template>

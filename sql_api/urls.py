@@ -97,6 +97,7 @@ urlpatterns = [
         api_slowlog.SlowQueryTrend.as_view(),
     ),
     path("v1/config/", api_config.ConfigView.as_view()),
+    path("v1/config/check_ai/", api_config.CheckAIConnectionView.as_view()),
     # ---- 实例管理 ----
     path("v1/instance/accounts/", api_instance_admin.AccountListView.as_view()),
     path("v1/instance/accounts/create/", api_instance_admin.AccountCreateView.as_view()),
@@ -125,11 +126,13 @@ urlpatterns = [
     # ---- SQL 分析 ----
     path("v1/sql_analyze/generate/", api_slowquery.SqlAnalyzeGenerateView.as_view()),
     path("v1/sql_analyze/analyze/", api_slowquery.SqlAnalyzeAnalyzeView.as_view()),
+    path("v1/sql_analyze/ai/", api_slowquery.SqlAnalyzeAIView.as_view()),
     # ---- SQL 优化工具 ----
     path("v1/optimize/sqladvisor/", api_slowquery.OptimizeSqlAdvisorView.as_view()),
     path("v1/optimize/soar/", api_slowquery.OptimizeSoarView.as_view()),
     path("v1/optimize/sqltuning/", api_slowquery.OptimizeSqlTuningView.as_view()),
     path("v1/optimize/explain/", api_slowquery.ExplainSqlView.as_view()),
+    path("v1/optimize/ai/", api_slowquery.OptimizeAIView.as_view()),
     # ---- 资源组管理 ----
     path("v1/group/list/", api_resource_group.GroupListView.as_view()),
     path("v1/group/relations/", api_resource_group.RelationsView.as_view()),

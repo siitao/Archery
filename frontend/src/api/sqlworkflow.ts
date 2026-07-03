@@ -175,7 +175,7 @@ export function alterRunDate(params: {
 /** 回滚语句行（backup_sql 返回，get_rollback 列表，元素为 SQL 字符串或 {sql,...}） */
 export type BackupSqlRow = string | ReviewRow;
 
-/** 查看回滚 SQL（GET /sqlworkflow/backup_sql/，{status,msg,rows}）
+/** 查看回滚 SQL（GET /api/v1/sqlworkflow/backup_sql/，{status,msg,rows}）
  *  rows 元素可能是：
  *   - 二维数组 [source_sql, rollback_sql]（goinception get_rollback 返回）
  *   - 字符串
@@ -183,7 +183,7 @@ export type BackupSqlRow = string | ReviewRow;
  */
 export async function fetchBackupSql(workflowId: number): Promise<ReviewRow[]> {
   const { data } = await request.get<{ status: number; msg: string; rows: BackupSqlRow[] }>(
-    "/sqlworkflow/backup_sql/",
+    "/api/v1/sqlworkflow/backup_sql/",
     { params: { workflow_id: workflowId } }
   );
   if (data.status !== 0) {
@@ -237,7 +237,7 @@ export async function oscControl(
     total: number;
     rows: OscProgressRow[];
     msg: string | null;
-  }>("/inception/osc_control/", form, {
+  }>("/api/v1/sqlworkflow/osc_control/", form, {
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
   });
   return { rows: data.rows || [], msg: data.msg || null };

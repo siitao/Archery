@@ -34,7 +34,7 @@ export const CONFIG_SECTIONS = [
   "功能模块配置",
   "通知配置",
   "OIDC 配置",
-  "OPENAI 配置",
+  "AI 配置",
   "其他配置",
 ] as const;
 
@@ -180,11 +180,11 @@ export const CONFIG_FIELDS: ConfigField[] = [
   // ── OIDC 配置 ──────────────────────────────────
   { key: "oidc_btn_name", label: "OIDC 按钮名称", type: "text", section: "OIDC 配置" },
 
-  // ── OPENAI 配置 ──────────────────────────────────
-  { key: "openai_base_url", label: "OpenAI API 地址", type: "text", section: "OPENAI 配置" },
-  { key: "openai_api_key", label: "OpenAI API Key", type: "password", section: "OPENAI 配置" },
-  { key: "default_chat_model", label: "默认模型", type: "text", section: "OPENAI 配置", desc: "默认 gpt-3.5-turbo" },
-  { key: "default_query_template", label: "查询模板", type: "text", section: "OPENAI 配置", desc: "生成SQL的提示词模板" },
+  // ── AI 配置 ──────────────────────────────────
+  { key: "openai_base_url", label: "AI 服务商地址", type: "text", section: "AI 配置", desc: "OpenAI 兼容的 API 地址，如 https://api.openai.com/v1" },
+  { key: "openai_api_key", label: "API Key", type: "password", section: "AI 配置" },
+  { key: "default_chat_model", label: "默认模型", type: "text", section: "AI 配置", desc: "如 gpt-3.5-turbo、gpt-4o、deepseek-chat 等" },
+  { key: "default_query_template", label: "查询模板", type: "text", section: "AI 配置", desc: "生成SQL的提示词模板" },
 
   // ── 其他配置 ──────────────────────────────────
   { key: "index_path_url", label: "首页地址", type: "text", section: "其他配置" },

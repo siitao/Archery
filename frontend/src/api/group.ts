@@ -24,13 +24,24 @@ export interface GroupInstanceRow {
   instance_name: string;
 }
 
+/** 用户可访问实例（GET /api/v1/group/user_instances/，旧信封 {status,msg,data}） */
+export function fetchUserInstances(
+  params: { db_type?: string[]; tag_codes?: string[] } = {}
+) {
+  return request
+    .get<LegacyEnvelope<GroupInstanceRow[]>>("/api/v1/group/user_instances/", {
+      params,
+    })
+    .then((res) => unwrapLegacy(res.data));
+}
+
 /** 资源组关联实例（POST /group/instances/，旧信封；用 group_name + tag_code） */
 export function fetchGroupInstances(groupName: string, tagCode = "can_write") {
   const form = new URLSearchParams();
   form.append("group_name", groupName);
   form.append("tag_code", tagCode);
   return request
-    .post<LegacyEnvelope<GroupInstanceRow[]>>("/group/instances/", form, {
+    .post<LegacyEnvelope<GroupInstanceRow[]>>("/api/v1/group/instances/", form, {
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
     })
     .then((res) => unwrapLegacy(res.data));
@@ -48,7 +59,7 @@ export function fetchGroupAuditors(groupName: string, workflowType = 2) {
   form.append("group_name", groupName);
   form.append("workflow_type", String(workflowType));
   return request
-    .post<LegacyEnvelope<GroupAuditors>>("/group/auditors/", form, {
+    .post<LegacyEnvelope<GroupAuditors>>("/api/v1/group/auditors/", form, {
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
     })
     .then((res) => unwrapLegacy(res.data));

@@ -96,10 +96,10 @@ function openUrl(url: string) {
           <span class="page-title">{{ route.meta.title || "" }}</span>
         </div>
         <div class="header-right">
-          <el-tooltip content="待办工作流（旧版）" placement="bottom">
-            <a class="header-action" :href="`${legacyBase}/workflow/`" target="_blank">
+          <el-tooltip content="待办工作流" placement="bottom">
+            <span class="header-action" @click="router.push({ name: 'todoworkflow' })">
               <el-icon><Bell /></el-icon>
-            </a>
+            </span>
           </el-tooltip>
           <el-dropdown>
             <span class="header-user">
@@ -144,6 +144,29 @@ function openUrl(url: string) {
   background: #1f2937;
   overflow-x: hidden;
   overflow-y: auto;
+
+  // 细滚动条：平时完全透明，鼠标悬停时浮现半透明细条
+  // Firefox
+  scrollbar-width: thin;
+  scrollbar-color: transparent transparent;
+  &:hover {
+    scrollbar-color: rgba(255, 255, 255, 0.25) transparent;
+  }
+
+  // WebKit (Chrome / Edge / Safari)
+  &::-webkit-scrollbar {
+    width: 6px;
+  }
+  &::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  &::-webkit-scrollbar-thumb {
+    background-color: transparent;
+    border-radius: 3px;
+  }
+  &:hover::-webkit-scrollbar-thumb {
+    background-color: rgba(255, 255, 255, 0.25);
+  }
 }
 
 .layout-brand {

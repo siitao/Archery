@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { ref, computed } from "vue";
 import * as XLSX from "xlsx";
-import { legacyBase } from "@/utils/request";
 import type { QueryResultEnvelope } from "@/api/sqlquery";
 import TruncateCell from "@/components/TruncateCell.vue";
 
@@ -64,7 +63,7 @@ const createText = computed(() => {
     .join("\n\n");
 });
 
-const applyUrl = `${legacyBase}/queryapplylist/`;
+const applyUrl = `/queryapplylist`;
 
 function formatCell(v: unknown): string {
   if (v === null || v === undefined) return "";

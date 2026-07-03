@@ -70,7 +70,7 @@ class RelationsView(APIView):
 
     def post(self, request):
         group_id = int(request.data.get("group_id"))
-        object_type = request.data.get("type")
+        object_type = str(request.data.get("type", ""))
         limit = int(request.data.get("limit", 0))
         offset = int(request.data.get("offset", 0))
         limit = offset + limit
@@ -119,7 +119,7 @@ class UnassociatedView(APIView):
 
     def post(self, request):
         group_id = int(request.data.get("group_id"))
-        object_type = int(request.data.get("object_type"))
+        object_type = int(request.data.get("object_type", -1))
         resource_group = ResourceGroup.objects.get(group_id=group_id)
 
         if object_type == 0:
@@ -189,7 +189,7 @@ class AddRelationView(APIView):
 
     def post(self, request):
         group_id = int(request.data.get("group_id"))
-        object_type = request.data.get("object_type")
+        object_type = str(request.data.get("object_type", ""))
         object_info = request.data.get("object_info")
         if isinstance(object_info, str):
             object_list = _json.loads(object_info)
@@ -214,7 +214,7 @@ class RemoveRelationView(APIView):
 
     def post(self, request):
         group_id = int(request.data.get("group_id"))
-        object_type = request.data.get("object_type")
+        object_type = str(request.data.get("object_type", ""))
         object_info = request.data.get("object_info")
         if isinstance(object_info, str):
             object_list = _json.loads(object_info)

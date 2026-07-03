@@ -21,34 +21,17 @@ const proxy = {
   // 旧 JSON 接口（迁移期 SPA 调用）。带尾斜杠避免与 SPA 路由冲突：
   //   /instance/ 不匹配 SPA 的 /instance；/param/ 不匹配 SPA 的 /paramcompare
   //   /audit/ 不匹配 SPA 的 /audit；/slowquery/ 不匹配 SPA 的 /slowquery
-  "/group/": { target: apiTarget, changeOrigin: true },
-  "/db_diagnostic/": { target: apiTarget, changeOrigin: true },
+  // 仅保留仍使用旧路径的非 /api 端点：
+  // - /instance/schemasync/（SchemaSync，sql/urls.py）
+  // - /sqlexport/pre_check/（数据导出预检）
+  // - /config/change/（配置管理）
+  // - /downloadfile/（导出文件下载）
+  // - /rollback/（回滚 SQL 下载）
   "/instance/": { target: apiTarget, changeOrigin: true },
-  "/param/": { target: apiTarget, changeOrigin: true },
-  "/query/": { target: apiTarget, changeOrigin: true },
-  "/check/": { target: apiTarget, changeOrigin: true },
-  // Phase 2 批次 1：SQL 分析 / 数据字典 / 慢查日志+优化工具 / 系统审计
-  "/sql_analyze/": { target: apiTarget, changeOrigin: true },
-  "/data_dictionary/": { target: apiTarget, changeOrigin: true },
-  "/slowquery/": { target: apiTarget, changeOrigin: true },
-  "/audit/": { target: apiTarget, changeOrigin: true },
-  "/sqlworkflow_list_audit/": { target: apiTarget, changeOrigin: true },
-  // 数据导出：提交前预检
   "/sqlexport/": { target: apiTarget, changeOrigin: true },
-  // 数据归档（PTArchiver）：list/apply/audit/log/switch/once
-  "/archive/": { target: apiTarget, changeOrigin: true },
-  // 配置项管理：change_config
   "/config/": { target: apiTarget, changeOrigin: true },
-  // My2SQL：binlog 列表 / 解析
-  "/binlog/": { target: apiTarget, changeOrigin: true },
-  // 数据导出：导出文件下载（local/sftp 文件流 / 云存储重定向）
   "/downloadfile/": { target: apiTarget, changeOrigin: true },
-  // SQL 上线 Step E：回滚语句查看（backup_sql）/ 下载（rollback）
-  // 用完整路径，避免与 SPA 的 /sqlworkflow/:id、/sqlworkflow/submit 路由前缀冲突
-  "/sqlworkflow/backup_sql/": { target: apiTarget, changeOrigin: true },
   "/rollback/": { target: apiTarget, changeOrigin: true },
-  // SQL 上线 Step E：OSC 进度控制（goInception pt-osc/gh-ost）
-  "/inception/osc_control/": { target: apiTarget, changeOrigin: true },
 };
 
 // https://vitejs.dev/config/

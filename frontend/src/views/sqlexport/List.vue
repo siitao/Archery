@@ -3,7 +3,7 @@ import { ref, reactive, onMounted } from "vue";
 import { useRouter } from "vue-router";
 import { Search, Refresh, Document } from "@element-plus/icons-vue";
 import { useAuthStore } from "@/stores/auth";
-import { fetchInstances, type InstanceRow } from "@/api/instance";
+import { fetchUserInstances, type GroupInstanceRow } from "@/api/group";
 import {
   fetchWorkflowLogs,
   WORKFLOW_STATUS,
@@ -28,7 +28,7 @@ const query = reactive({
   size: 20,
 });
 
-const instanceOptions = ref<InstanceRow[]>([]);
+const instanceOptions = ref<GroupInstanceRow[]>([]);
 const instanceMap = ref<Record<number, string>>({});
 
 // 操作日志弹窗
@@ -39,8 +39,9 @@ const logWorkflowName = ref("");
 
 async function loadInstances() {
   try {
-    const { data } = await fetchInstances({ size: 1000 });
-    instanceOptions.value = data.results || [];
+    // 走用户级接口（按资源组授权过滤），避免普通用户触发 403
+    const rows = await fetchUserInstances();
+    instanceOptions.value = rows || [];
     instanceMap.value = Object.fromEntries(
       instanceOptions.value.map((i) => [i.id, i.instance_name])
     );
@@ -183,7 +184,7 @@ onMounted(() => {
             style="width: 240px"
           />
         </el-form-item>
-        <el-form-item>
+        <el-form-item class="filter-actions">
           <el-button type="primary" :icon="Search" @click="onSearch">查询</el-button>
           <el-button :icon="Refresh" @click="onReset">重置</el-button>
           <el-button
@@ -302,7 +303,14 @@ onMounted(() => {
 }
 
 .filter-card :deep(.el-form-item) {
-  margin-bottom: 0;
+  margin-bottom: 8px;
+}
+
+/* 操作按钮组作为整体，inline 流式排版时整组一起换行而不被拆散 */
+.filter-actions {
+  :deep(.el-form-item__content) {
+    flex-wrap: nowrap;
+  }
 }
 
 .pager {

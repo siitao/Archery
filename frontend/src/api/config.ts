@@ -50,3 +50,19 @@ export function checkGoInception(params: {
       return res.data;
     });
 }
+
+/** AI 服务连接测试（POST /api/v1/config/check_ai/，测试当前表单输入值） */
+export function checkAIConnection(params: {
+  openai_base_url: string;
+  openai_api_key: string;
+  default_chat_model: string;
+}) {
+  return request
+    .post<{ status: number; msg: string }>("/api/v1/config/check_ai/", params)
+    .then((res) => {
+      if (res.data.status !== 0) {
+        throw new Error(res.data.msg || "连接测试失败");
+      }
+      return res.data;
+    });
+}

@@ -15,10 +15,13 @@
 import datetime as _dt
 import json as _json
 import logging
+import re
 from pathlib import Path
 
+import sqlparse
 from common.config import SysConfig
 from common.utils.extend_json_encoder import encode_json as _encode
+from common.utils.openai import OpenaiClient, check_openai_config
 from django.db.models import F, Max, Sum, Value as V
 from django.db.models.functions import Concat
 from django.http import JsonResponse
@@ -34,9 +37,11 @@ from sql.models import (
     SlowQueryHistory,
 )
 from sql.plugins.soar import Soar
+from sql.plugins.sqladvisor import SQLAdvisor
 from sql.services.instance_service import resolve_instance
+from sql.sql_tuning import SqlTuning
 from sql.utils.resource_group import user_instances
-from sql.utils.sql_utils import generate_sql
+from sql.utils.sql_utils import extract_tables, generate_sql
 
 logger = logging.getLogger("default")
 
@@ -353,54 +358,340 @@ class SqlAnalyzeAnalyzeView(APIView):
 
 # ========== SQL 优化 ==========
 
+
 class OptimizeSqlAdvisorView(APIView):
+    """SQLAdvisor 索引优化建议"""
+
     permission_classes = [IsAuthenticated, SqlOptimizePermission]
 
     def post(self, request):
+        sql_content = request.data.get("sql_content")
         instance_name = request.data.get("instance_name")
         db_name = request.data.get("db_name")
-        sql_content = request.data.get("sql_content")
         verbose = request.data.get("verbose", 1)
-        engine = get_engine(instance=instance_name)
-        dsn = engine.get_connection().dsn
-        res = Soar().soar_analyze(sql_content, dsn, verbose)
-        return JsonResponse({"status": 0, "msg": "", "data": res})
+        result = {"status": 0, "msg": "ok", "data": []}
+
+        # 服务器端参数验证
+        if not sql_content or not instance_name:
+            result["status"] = 1
+            result["msg"] = "页面提交参数可能为空"
+            return JsonResponse(result)
+
+        # 实例权限校验（限 mysql）
+        try:
+            instance = _get_and_check_instance(
+                request.user, instance_name, db_type="mysql"
+            )
+        except Instance.DoesNotExist:
+            result["status"] = 1
+            result["msg"] = "你所在组未关联该实例！"
+            return JsonResponse(result)
+
+        # 检查 sqladvisor 程序路径
+        if not SysConfig().get("sqladvisor"):
+            result["status"] = 1
+            result["msg"] = "请配置SQLAdvisor路径！"
+            return JsonResponse(result)
+
+        # 提交给 sqladvisor 获取分析报告
+        sqladvisor = SQLAdvisor()
+        args = {
+            "h": instance.host,
+            "P": instance.port,
+            "u": instance.user,
+            "p": instance.password,
+            "d": db_name,
+            "v": verbose,
+            "q": sql_content.strip(),
+        }
+        args_check_result = sqladvisor.check_args(args)
+        if args_check_result["status"] == 1:
+            return JsonResponse(args_check_result)
+        cmd_args = sqladvisor.generate_args2cmd(args)
+        try:
+            stdout, stderr = sqladvisor.execute_cmd(cmd_args).communicate()
+            result["data"] = f"{stdout}{stderr}"
+        except RuntimeError as e:
+            result["status"] = 1
+            result["msg"] = str(e)
+        return JsonResponse(result)
 
 
 class OptimizeSoarView(APIView):
+    """SOAR 优化建议（markdown 报告）"""
+
     permission_classes = [IsAuthenticated, SqlOptimizePermission]
 
     def post(self, request):
         instance_name = request.data.get("instance_name")
         db_name = request.data.get("db_name")
-        sql_content = request.data.get("sql")
-        engine = get_engine(instance=instance_name)
-        dsn = engine.get_connection().dsn
-        res = Soar().soar_analyze(sql_content, dsn)
-        return JsonResponse({"status": 0, "msg": "", "data": res})
+        sql = request.data.get("sql")
+        result = {"status": 0, "msg": "ok", "data": []}
+
+        # 服务器端参数验证
+        if not (instance_name and db_name and sql):
+            result["status"] = 1
+            result["msg"] = "页面提交参数可能为空"
+            return JsonResponse(result)
+
+        # 实例权限校验（限 mysql）
+        try:
+            instance = _get_and_check_instance(
+                request.user, instance_name, db_type="mysql"
+            )
+        except Instance.DoesNotExist:
+            result["status"] = 1
+            result["msg"] = "你所在组未关联该实例！"
+            return JsonResponse(result)
+
+        # 检查测试实例的连接信息和 soar 程序路径
+        soar_test_dsn = SysConfig().get("soar_test_dsn")
+        soar_path = SysConfig().get("soar")
+        if not (soar_path and soar_test_dsn):
+            result["status"] = 1
+            result["msg"] = "请配置soar_path和test_dsn！"
+            return JsonResponse(result)
+
+        # 目标实例的连接信息
+        online_dsn = (
+            f"{instance.user}:{instance.password}@{instance.host}:{instance.port}/{db_name}"
+        )
+
+        # 提交给 soar 获取分析报告
+        soar = Soar()
+        args = {
+            "online-dsn": online_dsn,
+            "test-dsn": soar_test_dsn,
+            "allow-online-as-test": False,
+            "report-type": "markdown",
+            "query": sql.strip(),
+        }
+        args_check_result = soar.check_args(args)
+        if args_check_result["status"] == 1:
+            return JsonResponse(args_check_result)
+        cmd_args = soar.generate_args2cmd(args)
+        try:
+            stdout, stderr = soar.execute_cmd(cmd_args).communicate()
+            result["data"] = stdout if stdout else stderr
+        except RuntimeError as e:
+            result["status"] = 1
+            result["msg"] = str(e)
+        return JsonResponse(result)
 
 
 class OptimizeSqlTuningView(APIView):
+    """MySQL 调优：系统参数 / SQL 计划 / 对象统计 / 会话状态"""
+
     permission_classes = [IsAuthenticated, SqlOptimizePermission]
 
     def post(self, request):
         instance_name = request.data.get("instance_name")
         db_name = request.data.get("db_name")
         sql_content = request.data.get("sql_content")
-        engine = get_engine(instance=instance_name)
-        dsn = engine.get_connection().dsn
-        res = Soar().sql_tuning(sql_content, dsn)
-        return JsonResponse({"status": 0, "msg": "", "data": res})
+        # 前端可不传 option，默认采集全部维度
+        option = request.data.get("option") or [
+            "sys_parm",
+            "sql_plan",
+            "obj_stat",
+            "sql_profile",
+        ]
+        result = {"status": 0, "msg": "ok", "data": {}}
+
+        # 清理注释，取第一条有效 SQL
+        if not sql_content:
+            result["status"] = 1
+            result["msg"] = "页面提交参数可能为空"
+            return JsonResponse(result)
+        sqltext = sqlparse.format(sql_content, strip_comments=True)
+        sqltext = sqlparse.split(sqltext)[0]
+        if re.match(r"^select|^show|^explain", sqltext, re.I) is None:
+            result["status"] = 1
+            result["msg"] = "只支持查询SQL！"
+            return JsonResponse(result)
+
+        # 实例权限校验
+        try:
+            _get_and_check_instance(request.user, instance_name)
+        except Instance.DoesNotExist:
+            result["status"] = 1
+            result["msg"] = "你所在组未关联该实例！"
+            return JsonResponse(result)
+
+        sql_tunning = SqlTuning(
+            instance_name=instance_name, db_name=db_name, sqltext=sqltext
+        )
+        data = {}
+        if "sys_parm" in option:
+            data["basic_information"] = sql_tunning.basic_information()
+            data["sys_parameter"] = sql_tunning.sys_parameter()
+            data["optimizer_switch"] = sql_tunning.optimizer_switch()
+        if "sql_plan" in option:
+            plan, optimizer_rewrite_sql = sql_tunning.sqlplan()
+            data["optimizer_rewrite_sql"] = optimizer_rewrite_sql
+            data["plan"] = plan
+        if "obj_stat" in option:
+            data["object_statistics"] = sql_tunning.object_statistics()
+        if "sql_profile" in option:
+            data["session_status"] = sql_tunning.exec_sql()
+        # 关闭连接
+        sql_tunning.engine.close()
+        data["sqltext"] = sqltext
+        result["data"] = data
+        return JsonResponse(_encode(result), safe=False)
 
 
 class ExplainSqlView(APIView):
+    """获取 SQL 执行计划"""
+
     permission_classes = [IsAuthenticated, SqlOptimizePermission]
+
+    def post(self, request):
+        sql_content = request.data.get("sql_content")
+        instance_name = request.data.get("instance_name")
+        db_name = request.data.get("db_name")
+        result = {"status": 0, "msg": "ok", "data": []}
+
+        # 服务器端参数验证
+        if not sql_content or not instance_name:
+            result["status"] = 1
+            result["msg"] = "页面提交参数可能为空"
+            return JsonResponse(result)
+
+        # 实例权限校验
+        try:
+            instance = _get_and_check_instance(request.user, instance_name)
+        except Instance.DoesNotExist:
+            result["status"] = 1
+            result["msg"] = "实例不存在"
+            return JsonResponse(result)
+
+        # 删除注释语句，进行语法判断，执行第一条有效 sql
+        sql_content = sqlparse.format(sql_content.strip(), strip_comments=True)
+        try:
+            sql_content = sqlparse.split(sql_content)[0]
+        except IndexError:
+            result["status"] = 1
+            result["msg"] = "没有有效的SQL语句"
+            return JsonResponse(result)
+
+        # 过滤非 explain 的语句
+        if not re.match(r"^explain", sql_content, re.I):
+            result["status"] = 1
+            result["msg"] = "仅支持explain开头的语句，请检查"
+            return JsonResponse(result)
+
+        # 执行获取执行计划语句
+        query_engine = get_engine(instance=instance)
+        db_name = query_engine.escape_string(db_name)
+        result["data"] = query_engine.query(str(db_name), sql_content).to_sep_dict()
+        return JsonResponse(_encode(result), safe=False)
+
+
+# ========== AI 分析 / AI 优化 ==========
+
+
+class SqlAnalyzeAIView(APIView):
+    """AI 评审 SQL（语法/规范/潜在问题），返回 markdown 报告"""
+
+    permission_classes = [IsAuthenticated, SqlAnalyzePermission]
+
+    def post(self, request):
+        text = request.data.get("text")
+        result = {"status": 0, "msg": "ok", "data": ""}
+
+        if not text:
+            result["status"] = 1
+            result["msg"] = "请输入 SQL 语句"
+            return JsonResponse(result)
+
+        # 校验 openai 是否配置
+        if not check_openai_config():
+            result["status"] = 1
+            result["msg"] = "请先在系统配置的 AI 配置中填写 API Key"
+            return JsonResponse(result)
+
+        try:
+            report = OpenaiClient().analyze_sql_by_openai(text)
+            result["data"] = report
+        except ValueError as e:
+            result["status"] = 1
+            result["msg"] = str(e)
+        return JsonResponse(result)
+
+
+class OptimizeAIView(APIView):
+    """AI 优化 SQL（结合表结构），返回 markdown 报告"""
+
+    permission_classes = [IsAuthenticated, SqlOptimizePermission]
+
+    # 拉取表结构的最大表数量，避免 prompt 过长
+    MAX_TABLES = 5
 
     def post(self, request):
         instance_name = request.data.get("instance_name")
         db_name = request.data.get("db_name")
         sql_content = request.data.get("sql_content")
-        engine = get_engine(instance=instance_name)
-        dsn = engine.get_connection().dsn
-        explain = engine.explain_sql(sql_content, dsn)
-        return JsonResponse({"status": 0, "msg": "", "data": explain})
+        result = {"status": 0, "msg": "ok", "data": ""}
+
+        if not sql_content or not instance_name:
+            result["status"] = 1
+            result["msg"] = "页面提交参数可能为空"
+            return JsonResponse(result)
+
+        # 校验 openai 是否配置
+        if not check_openai_config():
+            result["status"] = 1
+            result["msg"] = "请先在系统配置的 AI 配置中填写 API Key"
+            return JsonResponse(result)
+
+        # 实例权限校验
+        try:
+            instance = _get_and_check_instance(request.user, instance_name)
+        except Instance.DoesNotExist:
+            result["status"] = 1
+            result["msg"] = "你所在组未关联该实例！"
+            return JsonResponse(result)
+
+        # 拉取相关表的建表语句作为上下文
+        table_schemas = self._collect_table_schemas(instance, db_name, sql_content)
+        try:
+            report = OpenaiClient().optimize_sql_by_openai(
+                db_type=instance.db_type,
+                db_name=db_name,
+                sql_text=sql_content,
+                table_schemas=table_schemas,
+            )
+            result["data"] = report
+        except ValueError as e:
+            result["status"] = 1
+            result["msg"] = str(e)
+        return JsonResponse(result)
+
+    def _collect_table_schemas(self, instance, db_name, sql_content):
+        """从 SQL 中提取表名，拉取每张表的建表语句，拼成上下文文本"""
+        try:
+            tables = extract_tables(sql_content)
+        except Exception:
+            tables = []
+        if not tables:
+            return "(无法解析出表名，仅依据 SQL 文本给出建议)"
+
+        engine = get_engine(instance=instance)
+        escaped_db = engine.escape_string(db_name)
+        parts = []
+        for tb in tables[: self.MAX_TABLES]:
+            tb_name = tb.get("name", "").strip("`")
+            if not tb_name:
+                continue
+            try:
+                rs = engine.describe_table(escaped_db, tb_name).to_sep_dict()
+                # show create table 结果集：第二列是建表语句
+                create_ddl = ""
+                if rs["rows"]:
+                    create_ddl = rs["rows"][0][1] if len(rs["rows"][0]) > 1 else ""
+                parts.append(f"-- 表 {tb_name}\n{create_ddl};")
+            except Exception:
+                # 单张表拉取失败不影响整体
+                continue
+        engine.close()
+        return "\n\n".join(parts) if parts else "(表结构拉取失败，仅依据 SQL 文本给出建议)"

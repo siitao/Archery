@@ -6,11 +6,13 @@
 
 import logging
 
+from django.http import JsonResponse
 from drf_spectacular.utils import extend_schema
 from rest_framework import views, permissions
 from rest_framework.response import Response
 
 from common.config import SysConfig
+from common.utils.openai import test_openai_connection
 
 logger = logging.getLogger(__name__)
 
@@ -35,3 +37,27 @@ class ConfigView(views.APIView):
         sys_config = SysConfig()
         sys_config.get_all_config()
         return Response(sys_config.sys_config)
+
+
+class CheckAIConnectionView(views.APIView):
+    """AI 服务连接测试。
+
+    接收表单参数（允许测试尚未保存的临时值），发送一个最简 chat 请求验证连通性。
+    """
+
+    permission_classes = [IsSuperuser]
+
+    @extend_schema(
+        summary="AI 服务连接测试",
+        description="测试 openai_base_url / openai_api_key / default_chat_model 是否可用，"
+        "发送一个最简 chat 请求验证连通性。",
+    )
+    def post(self, request):
+        data = request.data
+        base_url = data.get("openai_base_url")
+        api_key = data.get("openai_api_key")
+        model = data.get("default_chat_model")
+        ok, msg = test_openai_connection(base_url=base_url, api_key=api_key, model=model)
+        return JsonResponse(
+            {"status": 0 if ok else 1, "msg": "连接成功" if ok else f"连接失败：{msg}"}
+        )

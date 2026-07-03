@@ -1,10 +1,10 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from "vue";
 import { ElMessage } from "element-plus";
-import { fetchInstances, type InstanceRow } from "@/api/instance";
+import { fetchUserInstances, type GroupInstanceRow } from "@/api/group";
 import { compareParam, type ParamCompareResult } from "@/api/instance_admin";
 
-const instances = ref<InstanceRow[]>([]);
+const instances = ref<GroupInstanceRow[]>([]);
 const loading = ref(false);
 
 // 筛选
@@ -67,8 +67,9 @@ async function onCompare() {
 
 onMounted(async () => {
   try {
-    const { data } = await fetchInstances({ size: 1000 });
-    instances.value = (data.results || []).filter((i) =>
+    // 走用户级接口（按资源组授权过滤），前端再按支持的 db_type 过滤
+    const rows = await fetchUserInstances();
+    instances.value = (rows || []).filter((i) =>
       supportedTypes.includes(i.db_type)
     );
   } catch {

@@ -18,6 +18,12 @@ export const menuItems: MenuItem[] = [
     routeName: "dashboard",
   },
   {
+    title: "待办工作流",
+    icon: "Bell",
+    perm: "sql.sql_review",
+    routeName: "todoworkflow",
+  },
+  {
     title: "SQL 审核",
     icon: "CircleCheck",
     perm: "sql.menu_sqlcheck",

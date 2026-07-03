@@ -239,6 +239,9 @@ class ResourceGroupDetail(views.APIView):
     资源组操作
     """
 
+    # 与 ResourceGroupList 对齐：GET 详情对普通登录用户开放；
+    # PUT/DELETE 的写操作由前端按钮的 isSuperuser 守卫限制
+    permission_classes = [permissions.IsAuthenticated]
     serializer_class = ResourceGroupSerializer
 
     def get_object(self, pk):

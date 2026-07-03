@@ -1,5 +1,13 @@
 import request, { unwrapLegacy, type LegacyEnvelope } from "@/utils/request";
 
+/**
+ * Redis 引擎返回 db_name 为 {value, text} 对象而非纯字符串。
+ * 统一提取为 string，防止 axios 将对象序列化为 db_name[value]=…。
+ */
+function dbName(v: unknown): string {
+  return v && typeof v === "object" ? (v as any).value ?? "" : (v as string) ?? "";
+}
+
 /** 可访问实例（resource_service:14） */
 export interface QueryInstanceRow {
   id: number;
@@ -78,7 +86,9 @@ export function fetchQueryResources(params: {
   tb_name?: string;
 }) {
   return request
-    .get<LegacyEnvelope<string[]>>("/api/v1/sqlquery/resources/", { params })
+    .get<LegacyEnvelope<string[]>>("/api/v1/sqlquery/resources/", {
+      params: { ...params, db_name: dbName(params.db_name) },
+    })
     .then((res) => unwrapLegacy(res.data));
 }
 
@@ -90,10 +100,10 @@ export function describeTable(params: {
   schema_name?: string;
 }) {
   return request
-    .post<LegacyEnvelope<QueryResultSet>>(
-      "/api/v1/sqlquery/describetable/",
-      params
-    )
+    .post<LegacyEnvelope<QueryResultSet>>("/api/v1/sqlquery/describetable/", {
+      ...params,
+      db_name: dbName(params.db_name),
+    })
     .then((res) => unwrapLegacy(res.data));
 }
 
@@ -110,9 +120,11 @@ export function executeQuery(params: {
   schema_name?: string;
   tb_name?: string;
 }) {
-  return request.post<QueryResultEnvelope>("/api/v1/sqlquery/execute/", params, {
-    timeout: 90000,
-  });
+  return request.post<QueryResultEnvelope>(
+    "/api/v1/sqlquery/execute/",
+    { ...params, db_name: dbName(params.db_name) },
+    { timeout: 90000 }
+  );
 }
 
 /** 查询历史（GET /api/v1/sqlquery/logs/，返回 {total,rows} 非 LegacyEnvelope） */
@@ -154,7 +166,9 @@ export function locateTable(tableName: string) {
     .then((res) => unwrapLegacy(res.data));
 }
 
-/** AI 生成 SQL（POST /query/generate_sql/，旧接口表单编码） */
+/** AI 生成 SQL（POST /query/generate_sql/）。
+ * 后端结合所选表 DDL 作为上下文，调用 OpenAI 生成查询语句。
+ * unwrapLegacy：status 非 0 时自动弹错并抛出。 */
 export function generateSql(params: {
   query_desc: string;
   db_type: string;
@@ -162,29 +176,23 @@ export function generateSql(params: {
   db_name: string;
   schema_name?: string;
   tb_name?: string;
-  tb_name_list?: string[];
 }) {
-  const form = new URLSearchParams();
-  form.append("query_desc", params.query_desc);
-  form.append("db_type", params.db_type);
-  form.append("instance_name", params.instance_name);
-  form.append("db_name", params.db_name);
-  if (params.schema_name) form.append("schema_name", params.schema_name);
-  if (params.tb_name) form.append("tb_name", params.tb_name);
-  if (params.tb_name_list) {
-    for (const t of params.tb_name_list) form.append("tb_name_list[]", t);
-  }
   return request
-    .post<LegacyEnvelope<string>>("/query/generate_sql/", form, {
-      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    .post<LegacyEnvelope<string>>("/api/v1/query/generate_sql/", {
+      query_desc: params.query_desc,
+      db_type: params.db_type,
+      instance_name: params.instance_name,
+      db_name: params.db_name,
+      schema_name: params.schema_name || undefined,
+      tb_name: params.tb_name || undefined,
     })
     .then((res) => unwrapLegacy(res.data));
 }
 
 /**
- * 探测 OpenAI 是否配置（GET /check/openai/）。
+ * 探测 OpenAI 是否配置（GET /api/v1/query/check_openai/）。
  * 不 unwrap：未配置时 status 可能非 0，但不是「错误」（不弹提示），由页面判 status。
  */
 export function checkOpenai() {
-  return request.get<LegacyEnvelope<{ openai?: boolean }>>("/check/openai/");
+  return request.get<LegacyEnvelope<{ openai?: boolean }>>("/api/v1/query/check_openai/");
 }

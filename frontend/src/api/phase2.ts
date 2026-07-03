@@ -52,6 +52,13 @@ export function analyzeSql(params: {
     .then((res) => checkStatus(res.data).data || "");
 }
 
+/** AI 分析（markdown 报告） */
+export function analyzeSqlByAI(text: string) {
+  return request
+    .post<{ status: number; msg: string; data?: string }>("/api/v1/sql_analyze/ai/", { text })
+    .then((res) => checkStatus(res.data).data || "");
+}
+
 // ============ 数据字典（DRF ViewSet /api/v1/dictionary/）============
 
 export type DictionaryObjectType =
@@ -187,13 +194,14 @@ export function optimizeSqlTuning(params: {
   instance_name: string;
   db_name: string;
   sql_content: string;
+  option?: string[];
 }) {
   return request
-    .post<{ status: number; msg: string; data?: string }>(
+    .post<{ status: number; msg: string; data?: Record<string, unknown> }>(
       "/api/v1/optimize/sqltuning/",
       params,
     )
-    .then((res) => checkStatus(res.data).data || "");
+    .then((res) => checkStatus(res.data).data || {});
 }
 
 /** 执行计划（POST /api/v1/optimize/explain/，返回 {column_list, rows}） */
@@ -208,6 +216,17 @@ export function explainSql(params: {
       params,
     )
     .then((res) => checkStatus(res.data).data || { column_list: [], rows: [] });
+}
+
+/** AI 优化建议（markdown 报告，结合表结构） */
+export function optimizeSqlByAI(params: {
+  instance_name: string;
+  db_name: string;
+  sql_content: string;
+}) {
+  return request
+    .post<{ status: number; msg: string; data?: string }>("/api/v1/optimize/ai/", params)
+    .then((res) => checkStatus(res.data).data || "");
 }
 
 // ============ 慢查日志 slowlog.py ============
@@ -306,7 +325,7 @@ export function schemaSync(params: {
 }) {
   return request
     .post<{ status: number; msg: string; data?: SchemaSyncResult }>(
-      "/instance/schemasync/",
+      "/api/v1/schemasync/",
       form({
         instance_name: params.instance_name,
         db_name: params.db_name,
@@ -322,7 +341,7 @@ export function schemaSync(params: {
 
 // ============ 系统审计 audit_log.py + 复用工单/查询审计 ============
 
-/** 通用审计日志（POST /audit/log/，limit/offset 有默认） */
+/** 通用审计日志（POST /api/v1/audit/log/，limit/offset 有默认） */
 export function fetchAuditLog(params: {
   limit?: number;
   offset?: number;
@@ -333,7 +352,7 @@ export function fetchAuditLog(params: {
 }) {
   return request
     .post<{ status: number; msg: string; total?: number; rows?: Record<string, unknown>[] }>(
-      "/audit/log/",
+      "/api/v1/audit/log/",
       form(params),
       { headers: FORM_HEADERS }
     )
@@ -344,7 +363,7 @@ export function fetchAuditLog(params: {
     });
 }
 
-/** SQL 上线工单审计（POST /sqlworkflow_list_audit/，limit/offset 有默认） */
+/** SQL 上线工单审计（POST /api/v1/sqlworkflow/list_audit/，limit/offset 有默认） */
 export function fetchWorkflowAudit(params: {
   limit?: number;
   offset?: number;
@@ -352,7 +371,7 @@ export function fetchWorkflowAudit(params: {
 }) {
   return request
     .post<{ total?: number; rows?: Record<string, unknown>[] }>(
-      "/sqlworkflow_list_audit/",
+      "/api/v1/sqlworkflow/list_audit/",
       form(params),
       { headers: FORM_HEADERS }
     )
@@ -362,7 +381,7 @@ export function fetchWorkflowAudit(params: {
     });
 }
 
-/** 查询日志审计（POST /query/querylog_audit/） */
+/** 查询日志审计（POST /api/v1/audit/querylog/） */
 export function fetchQueryLogAudit(params: {
   limit?: number;
   offset?: number;
@@ -370,7 +389,7 @@ export function fetchQueryLogAudit(params: {
 }) {
   return request
     .post<{ total?: number; rows?: Record<string, unknown>[] }>(
-      "/query/querylog_audit/",
+      "/api/v1/audit/querylog/",
       form(params),
       { headers: FORM_HEADERS }
     )

@@ -264,8 +264,24 @@ Q_CLUSTER = {
 }
 
 # 缓存配置
+# 说明：显式配置连接池参数 + 失败降级，避免 Redis 抖动（如 10054 连接被对端重置）
+# 导致整个请求 500。health_check_interval 会自动剔除僵尸连接并重建，
+# IGNORE_EXCEPTIONS 在 Redis 真挂掉时静默降级（注意：限流会临时失效）。
 CACHES = {
-    "default": env.cache(),
+    "default": {
+        "BACKEND": "django_redis.cache.RedisCache",
+        "LOCATION": env("CACHE_URL", default="redis://127.0.0.1:6379/0"),
+        "OPTIONS": {
+            "CLIENT_CLASS": "django_redis.client.DefaultClient",
+            "CONNECTION_POOL_KWARGS": {
+                "socket_timeout": 5,
+                "socket_connect_timeout": 5,
+                "health_check_interval": 30,
+                "retry_on_timeout": True,
+            },
+        },
+        "IGNORE_EXCEPTIONS": True,
+    }
 }
 
 # https://docs.djangoproject.com/en/3.2/ref/settings/#std-setting-DEFAULT_AUTO_FIELD

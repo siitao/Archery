@@ -34,6 +34,50 @@ function isSqlColumn(col: string): boolean {
   return SQL_COLUMNS.has(col.toLowerCase());
 }
 
+/**
+ * 各审计 tab 的表头中文映射（按后端返回的英文字段名）。
+ * 未命中的字段原样显示，避免后端新增字段时表头空白。
+ */
+const COL_LABEL_MAP: Record<AuditType, Record<string, string>> = {
+  general: {
+    user_id: "用户ID",
+    user_name: "用户名",
+    user_display: "用户姓名",
+    action: "操作",
+    extra_info: "附加信息",
+    action_time: "操作时间",
+  },
+  workflow: {
+    id: "工单ID",
+    workflow_name: "工单名称",
+    engineer_display: "发起人",
+    status: "状态",
+    is_backup: "是否备份",
+    create_time: "创建时间",
+    "instance__instance_name": "实例",
+    db_name: "数据库",
+    group_name: "资源组",
+    syntax_type: "工单类型",
+    export_format: "导出格式",
+  },
+  query: {
+    id: "日志ID",
+    username: "用户名",
+    user_display: "用户姓名",
+    target_instance: "实例",
+    search_db: "数据库",
+    sqllog: "SQL语句",
+    effect_row: "影响行数",
+    cost_time: "耗时(ms)",
+    execute_time: "执行时间",
+    create_time: "查询时间",
+  },
+};
+
+function colLabel(col: string): string {
+  return COL_LABEL_MAP[activeTab.value]?.[col] || col;
+}
+
 async function loadData() {
   loading.value = true;
   list.value = [];
@@ -129,7 +173,7 @@ onMounted(loadData);
           v-for="col in cols"
           :key="col"
           :prop="col"
-          :label="col"
+          :label="colLabel(col)"
           min-width="140"
           :show-overflow-tooltip="!isSqlColumn(col)"
         >

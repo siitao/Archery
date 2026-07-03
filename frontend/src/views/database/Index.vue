@@ -11,7 +11,7 @@ import {
 import { fetchCurrentUser, type CurrentUser } from "@/api/user";
 
 const { instanceName, instanceGroups, currentInstance, loadInstances } =
-  useInstanceSelect();
+  useInstanceSelect(["mysql", "mongo"]);
 
 const list = ref<DatabaseRow[]>([]);
 const loading = ref(false);

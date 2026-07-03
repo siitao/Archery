@@ -54,3 +54,15 @@ def test_normal_user_can_access_table_locator(api_client, normal_user, monkeypat
     body = response.json()
     assert body["status"] == 0
     assert body["count"] == 0
+
+
+@pytest.mark.django_db
+def test_normal_user_can_access_resource_group_detail(
+    api_client, normal_user, create_resource_group
+):
+    """ResourceGroupDetail 的 GET 应对普通登录用户开放（与 ResourceGroupList 对齐）。"""
+    api_client.force_authenticate(user=normal_user)
+    response = api_client.get(
+        f"/api/v1/user/resourcegroup/{create_resource_group.group_id}/"
+    )
+    assert response.status_code == 200

@@ -38,8 +38,7 @@ import traceback
 from pathlib import Path
 
 from django.conf import settings
-from django.db.models import Q
-from django.db.models import Q, Value as V
+from django.db.models import Q, Value as V, F
 from django.db.models.functions import Concat
 from django.http import JsonResponse, FileResponse, HttpResponse
 from django.db import transaction as _tx
@@ -225,12 +224,12 @@ class AuditQueryLogView(APIView):
         ).annotate(
             target_instance=F("instance_name"),
             search_db=F("db_name"),
-            execute_time=F("query_time"),
+            execute_time=F("cost_time"),
             sqllog=V("") if not search else F("sqllog"),
         ) if search else QueryLog.objects.filter(**filter_dict).annotate(
             target_instance=F("instance_name"),
             search_db=F("db_name"),
-            execute_time=F("query_time"),
+            execute_time=F("cost_time"),
         )
         count = qs.count()
         rows = [r for r in qs.order_by("-create_time")[offset:limit].values(
@@ -333,6 +332,9 @@ class My2sqlView(APIView):
         output_dir = args["output-dir"]
         os.makedirs(output_dir, exist_ok=True)
 
+        args_check = my2sql.check_args(args)
+        if args_check["status"] == 1:
+            return JsonResponse(args_check)
         cmd_args = my2sql.generate_args2cmd(args)
         try:
             stdout, stderr = my2sql.execute_cmd(cmd_args).communicate()
@@ -377,24 +379,78 @@ class My2sqlView(APIView):
 # ========== 查询 / AI ==========
 
 class GenerateSqlView(APIView):
+    """AI 生成 SQL：调用 OpenAI，结合所选表的 DDL 作为上下文生成查询语句。
+
+    前端传 query_desc / db_type / instance_name / db_name / tb_name / schema_name。
+    若提供了 instance_name + db_name + tb_name，则先取表结构（show create table）作为
+    table_schema 喂给 OpenAI，提高生成准确度。
+    """
+
     permission_classes = [IsAuthenticated]
 
     def post(self, request):
-        from sql.utils.sql_utils import generate_sql as gs
-        text = request.data.get("text", "")
-        instance_name = request.data.get("instance_name", "")
-        db_name = request.data.get("db_name", "")
-        rows = gs(text)
-        return JsonResponse({"status": 0, "msg": "ok", "data": rows})
+        query_desc = (request.data.get("query_desc") or "").strip()
+        db_type = (request.data.get("db_type") or "").strip()
+        instance_name = (request.data.get("instance_name") or "").strip()
+        db_name = (request.data.get("db_name") or "").strip()
+        tb_name = (request.data.get("tb_name") or "").strip()
+        schema_name = (request.data.get("schema_name") or "").strip()
+
+        if not query_desc:
+            return JsonResponse(
+                {"status": 1, "msg": "请输入查询描述", "data": ""}
+            )
+
+        # table_schema：尽量从库中取真实 DDL，取不到则退化为表名
+        table_schema = ""
+        if instance_name and db_name and tb_name:
+            try:
+                instance = resolve_instance(
+                    request.user, instance_name=instance_name, db_type=db_type or None
+                )
+                engine = get_engine(instance=instance)
+                rs = engine.describe_table(
+                    db_name, tb_name, schema_name=schema_name or None
+                )
+                rows = getattr(rs, "rows", None) or []
+                table_schema = "\n".join(
+                    " | ".join(str(c) for c in row) for row in rows
+                )
+            except Instance.DoesNotExist:
+                return JsonResponse(
+                    {"status": 1, "msg": "实例不存在或你所在组未关联", "data": ""}
+                )
+            except Exception as e:
+                logger.warning("generate_sql 取表结构失败: %s", e)
+                table_schema = tb_name
+        elif tb_name:
+            table_schema = tb_name
+
+        try:
+            from common.utils.openai import OpenaiClient
+
+            client = OpenaiClient()
+            sql = client.generate_sql_by_openai(
+                db_type=db_type, table_schema=table_schema, user_input=query_desc
+            )
+            return JsonResponse({"status": 0, "msg": "ok", "data": sql or ""})
+        except ValueError as e:
+            logger.warning("generate_sql 失败: %s", e)
+            return JsonResponse({"status": 1, "msg": str(e), "data": ""})
+        except Exception as e:
+            logger.exception("generate_sql 异常")
+            return JsonResponse({"status": 1, "msg": str(e), "data": ""})
 
 
 class CheckOpenAIView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
-        from common.config import SysConfig
-        openai_key = SysConfig().get("openai_key", "")
-        return JsonResponse({"status": 0, "msg": "ok", "data": {"openai": bool(openai_key)}})
+        from common.utils.openai import check_openai_config
+
+        return JsonResponse(
+            {"status": 0, "msg": "ok", "data": {"openai": check_openai_config()}}
+        )
 
 
 # ========== 查询权限申请 ==========

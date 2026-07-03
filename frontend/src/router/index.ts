@@ -21,13 +21,19 @@ const routes: RouteRecordRaw[] = [
         path: "dashboard",
         name: "dashboard",
         component: () => import("@/views/dashboard/Index.vue"),
-        meta: { title: "Dashboard", perm: "sql.menu_dashboard" },
+        meta: { title: "Dashboard" },
+      },
+      {
+        path: "todoworkflow",
+        name: "todoworkflow",
+        component: () => import("@/views/todoworkflow/List.vue"),
+        meta: { title: "待办工作流", perm: "sql.sql_review" },
       },
       {
         path: "instance",
         name: "instance-list",
         component: () => import("@/views/instance/List.vue"),
-        meta: { title: "实例列表", perm: "sql.menu_instance_list" },
+        meta: { title: "实例列表", perm: "sql.menu_instance_list", requireSuperuser: true },
       },
       {
         path: "sqlworkflow",
@@ -229,6 +235,11 @@ router.beforeEach(async (to) => {
   // 权限位拦截
   const perm = to.meta.perm as string | undefined;
   if (perm && !auth.hasPerm(perm)) {
+    return { name: "dashboard" };
+  }
+
+  // 超管专属页面拦截（如实例管理，其数据接口要求超管）
+  if (to.meta.requireSuperuser && !auth.isSuperuser) {
     return { name: "dashboard" };
   }
 

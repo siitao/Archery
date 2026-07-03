@@ -513,44 +513,48 @@ def offline_file_download(request):
     action = "离线下载"
     extra_info = f"工单id：{workflow_id}，文件：{file_name}"
     config = SysConfig()
-    storage_type = config.get("storage_type")
+    storage_type = config.get("storage_type", "local")
     storage = DynamicStorage()
 
     try:
         if not storage.exists(file_name):
             extra_info = extra_info + f"，error:文件不存在。"
             return JsonResponse({"error": "文件不存在"}, status=404)
-        elif storage.exists(file_name):
-            if storage_type in ["sftp", "local"]:
-                # SFTP/LOCAL处理 - 直接提供文件流
-                try:
-                    file = storage.open(file_name, "rb")
-                    file_size = storage.size(file_name)
-                    response = StorageFileResponse(file, storage=storage)
-                    response["Content-Disposition"] = (
-                        f'attachment; filename="{file_name}"'
-                    )
-                    response["Content-Length"] = str(file_size)
-                    response["Content-Encoding"] = "identity"
-                    return response
-                except Exception as e:
-                    extra_info = extra_info + f"，error:{str(e)}"
-                    logger.error(extra_info)
-                    return JsonResponse(
-                        {"error": f"文件下载失败：请联系管理员。"}, status=500
-                    )
 
-            elif storage_type in ["s3c", "azure"]:
-                try:
-                    # 云对象存储生成带有效期的临时下载URL
-                    presigned_url = storage.url(file_name)
-                    return JsonResponse({"type": "redirect", "url": presigned_url})
-                except Exception as e:
-                    extra_info = extra_info + f"，error:{str(e)}"
-                    logger.error(extra_info)
-                    return JsonResponse(
-                        {"error": f"文件下载失败：请联系管理员。"}, status=500
-                    )
+        if storage_type in ["sftp", "local"]:
+            # SFTP/LOCAL处理 - 直接提供文件流
+            try:
+                file = storage.open(file_name, "rb")
+                file_size = storage.size(file_name)
+                response = StorageFileResponse(file, storage=storage)
+                response["Content-Disposition"] = (
+                    f'attachment; filename="{file_name}"'
+                )
+                response["Content-Length"] = str(file_size)
+                response["Content-Encoding"] = "identity"
+                return response
+            except Exception as e:
+                extra_info = extra_info + f"，error:{str(e)}"
+                logger.error(extra_info)
+                return JsonResponse(
+                    {"error": f"文件下载失败：请联系管理员。"}, status=500
+                )
+
+        elif storage_type in ["s3c", "azure"]:
+            try:
+                # 云对象存储生成带有效期的临时下载URL
+                presigned_url = storage.url(file_name)
+                return JsonResponse({"type": "redirect", "url": presigned_url})
+            except Exception as e:
+                extra_info = extra_info + f"，error:{str(e)}"
+                logger.error(extra_info)
+                return JsonResponse(
+                    {"error": f"文件下载失败：请联系管理员。"}, status=500
+                )
+        else:
+            return JsonResponse(
+                {"error": f"不支持的存储类型：{storage_type}"}, status=500
+            )
 
     except Exception as e:
         extra_info = extra_info + f"，error:{str(e)}"

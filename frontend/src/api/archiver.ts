@@ -2,7 +2,7 @@ import request from "@/utils/request";
 import { ElMessage } from "element-plus";
 
 /**
- * 数据归档（PTArchiver）。旧接口 /archive/*（list/log/once 为 GET，apply/audit/switch 为 POST），
+ * 数据归档（PTArchiver）。旧接口 /api/v1/archive/*（list/log/once 为 GET，apply/audit/switch 为 POST），
  * 信封 {total,rows} 或 {status,msg,data}。详情/审核走新增 DRF /api/v1/archive/*。
  * 复用 checkStatus/form 模式（参考 querypriv.ts）。申请 workflow_type=3（ArchiveConfig）。
  */
@@ -76,7 +76,7 @@ export function fetchArchiveList(params: {
   state?: "true" | "false" | "";
 }) {
   return request
-    .get<{ total: number; rows: ArchiveRow[] }>("/archive/list/", { params })
+    .get<{ total: number; rows: ArchiveRow[] }>("/api/v1/archive/list/", { params })
     .then((res) => ({ total: res.data.total || 0, rows: res.data.rows || [] }));
 }
 
@@ -97,7 +97,7 @@ export function archiveApply(params: {
 }) {
   return request
     .post<{ status: number; msg: string; data: { archive_id?: number } }>(
-      "/archive/apply/",
+      "/api/v1/archive/apply/",
       form({
         title: params.title,
         group_name: params.group_name,
@@ -140,7 +140,7 @@ export function fetchArchiveLog(params: {
   offset: number;
 }) {
   return request
-    .get<{ total: number; rows: ArchiveLogRow[] }>("/archive/log/", { params })
+    .get<{ total: number; rows: ArchiveLogRow[] }>("/api/v1/archive/log/", { params })
     .then((res) => ({ total: res.data.total || 0, rows: res.data.rows || [] }));
 }
 
@@ -148,7 +148,7 @@ export function fetchArchiveLog(params: {
 export function archiveSwitch(archive_id: number, state: boolean) {
   return request
     .post<{ status: number; msg: string; data: unknown }>(
-      "/archive/switch/",
+      "/api/v1/archive/switch/",
       form({ archive_id, state: state ? "true" : "false" }),
       { headers: FORM_HEADERS }
     )
@@ -158,7 +158,7 @@ export function archiveSwitch(archive_id: number, state: boolean) {
 /** 单次立即执行归档（GET /archive/once/，触发 django-q 异步任务） */
 export function archiveOnce(archive_id: number) {
   return request
-    .get<{ status: number; msg: string; data: unknown }>("/archive/once/", {
+    .get<{ status: number; msg: string; data: unknown }>("/api/v1/archive/once/", {
       params: { archive_id },
     })
     .then((res) => checkStatus(res.data));
