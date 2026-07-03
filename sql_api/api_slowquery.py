@@ -616,6 +616,10 @@ class SqlAnalyzeAIView(APIView):
         except ValueError as e:
             result["status"] = 1
             result["msg"] = str(e)
+        except Exception as e:
+            logger.exception("AI 分析 SQL 异常")
+            result["status"] = 1
+            result["msg"] = f"AI 分析失败：{e}"
         return JsonResponse(result)
 
 
@@ -665,6 +669,10 @@ class OptimizeAIView(APIView):
         except ValueError as e:
             result["status"] = 1
             result["msg"] = str(e)
+        except Exception as e:
+            logger.exception("AI 优化 SQL 异常")
+            result["status"] = 1
+            result["msg"] = f"AI 优化失败：{e}"
         return JsonResponse(result)
 
     def _collect_table_schemas(self, instance, db_name, sql_content):
