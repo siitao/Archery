@@ -12,9 +12,8 @@ const apiTarget = process.env.ARCHERY_API_TARGET || "http://localhost:8000";
 // 注意：不要代理与 SPA 路由同前缀的路径（如 /dashboard、/instance、/login），
 // 否则刷新页面会被转发到 Django 而非返回 index.html。
 const proxy = {
-  // 所有 DRF 接口（含登录/登出/配置/导出/回滚等，A 档已全部迁入 /api/v1/）
+  // 所有 DRF 接口（含登录/登出/配置/导出/回滚等，均已迁入 /api/v1/）
   "/api": { target: apiTarget, changeOrigin: true },
-  "/dashboard/api": { target: apiTarget, changeOrigin: true },
   "/jsi18n": { target: apiTarget, changeOrigin: true },
   // SSO 登录入口（整页跳转，开发期需代理到后端）
   "/oidc": { target: apiTarget, changeOrigin: true },

@@ -15,8 +15,7 @@ import simplejson as json
 from django.contrib.auth.decorators import permission_required
 from django.db import transaction
 from django.db.models import Q
-from django.http import HttpResponse, HttpResponseRedirect
-from django.shortcuts import render
+from django.http import HttpResponse, HttpResponseRedirect, JsonResponse
 from django.urls import reverse
 from django_q.tasks import async_task
 
@@ -426,9 +425,7 @@ def query_priv_audit(request):
     try:
         audit_status = WorkflowAction(int(request.POST["audit_status"]))
     except ValueError as e:
-        return render(
-            request, "error.html", {"errMsg": f"audit_status 参数错误, {str(e)}"}
-        )
+        return JsonResponse({"status": 1, "msg": f"audit_status 参数错误, {str(e)}"})
     audit_remark = request.POST.get("audit_remark")
 
     if not audit_remark:
@@ -437,7 +434,7 @@ def query_priv_audit(request):
     try:
         sql_query_apply = QueryPrivilegesApply.objects.get(apply_id=apply_id)
     except QueryPrivilegesApply.DoesNotExist:
-        return render(request, "error.html", {"errMsg": "工单不存在"})
+        return JsonResponse({"status": 1, "msg": "工单不存在"})
     auditor = get_auditor(workflow=sql_query_apply)
     # 使用事务保持数据一致性
     with transaction.atomic():
@@ -446,7 +443,7 @@ def query_priv_audit(request):
                 audit_status, request.user, audit_remark
             )
         except AuditException as e:
-            return render(request, "error.html", {"errMsg": f"审核失败: {str(e)}"})
+            return JsonResponse({"status": 1, "msg": f"审核失败: {str(e)}"})
         # 统一 call back, 内部做授权和更新数据库内容
         _query_apply_audit_call_back(
             auditor.audit.workflow_id, auditor.audit.current_status

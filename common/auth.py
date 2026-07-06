@@ -2,19 +2,11 @@ import datetime
 import logging
 import traceback
 
-import simplejson as json
-from django.contrib.sessions.backends.db import SessionStore
-from django.contrib.auth import authenticate, login, logout
-from django.contrib.auth.password_validation import validate_password
-from django.core.exceptions import ValidationError
+from django.contrib.auth import authenticate
 from django.contrib.auth.models import Group
-from django.http import HttpResponse, HttpResponseRedirect
-from django.urls import reverse
 
-from django.conf import settings
 from common.config import SysConfig
-from common.utils.ding_api import get_ding_user_id
-from sql.models import Users, ResourceGroup, TwoFactorAuthConfig
+from sql.models import Users, ResourceGroup
 
 logger = logging.getLogger("default")
 
@@ -114,103 +106,3 @@ class ArcheryAuth(object):
         user.last_login_failed_at = datetime.datetime.now()
         user.save()
         return {"status": 1, "msg": "用户名或密码错误，请重新输入！", "data": ""}
-
-
-# ajax接口，登录页面调用，用来验证用户名密码
-def authenticate_entry(request):
-    """接收http请求，然后把请求中的用户名密码传给ArcherAuth去验证"""
-    new_auth = ArcheryAuth(request)
-    result = new_auth.authenticate()
-    if result["status"] == 0:
-        authenticated_user = result["data"]
-        twofa_enabled = TwoFactorAuthConfig.objects.filter(user=authenticated_user)
-        # 是否开启全局2fa
-        if SysConfig().get("enforce_2fa"):
-            # 用户是否配置过2fa
-            if twofa_enabled:
-                verify_mode = "verify_only"
-            else:
-                verify_mode = "verify_config"
-            # 设置无登录状态session
-            s = SessionStore()
-            s["user"] = authenticated_user.username
-            s["verify_mode"] = verify_mode
-            s.set_expiry(300)
-            s.create()
-            result = {"status": 0, "msg": "ok", "data": s.session_key}
-        else:
-            # 用户是否配置过2fa
-            if twofa_enabled:
-                # 设置无登录状态session
-                s = SessionStore()
-                s["user"] = authenticated_user.username
-                s["verify_mode"] = "verify_only"
-                s.set_expiry(300)
-                s.create()
-                result = {"status": 0, "msg": "ok", "data": s.session_key}
-            else:
-                # 未设置2fa直接登录
-                login(request, authenticated_user)
-                # 从钉钉获取该用户的 dingding_id，用于单独给他发消息
-                if SysConfig().get(
-                    "ding_to_person"
-                ) is True and "admin" not in request.POST.get("username"):
-                    get_ding_user_id(request.POST.get("username"))
-                result = {"status": 0, "msg": "ok", "data": None}
-
-    return HttpResponse(json.dumps(result), content_type="application/json")
-
-
-# 注册用户
-def sign_up(request):
-    sign_up_enabled = SysConfig().get("sign_up_enabled", False)
-    if not sign_up_enabled:
-        result = {"status": 1, "msg": "注册未启用,请联系管理员开启", "data": None}
-        return HttpResponse(json.dumps(result), content_type="application/json")
-    username = request.POST.get("username")
-    password = request.POST.get("password")
-    password2 = request.POST.get("password2")
-    display = request.POST.get("display")
-    email = request.POST.get("email")
-    result = {"status": 0, "msg": "ok", "data": None}
-
-    if not (username and password):
-        result["status"] = 1
-        result["msg"] = "用户名和密码不能为空"
-    elif len(Users.objects.filter(username=username)) > 0:
-        result["status"] = 1
-        result["msg"] = "用户名已存在"
-    elif password != password2:
-        result["status"] = 1
-        result["msg"] = "两次输入密码不一致"
-    elif not display:
-        result["status"] = 1
-        result["msg"] = "请填写中文名"
-    else:
-        # 验证密码
-        try:
-            validate_password(password)
-            Users.objects.create_user(
-                username=username,
-                password=password,
-                display=display,
-                email=email,
-                is_active=1,
-                is_staff=True,
-            )
-        except ValidationError as msg:
-            result["status"] = 1
-            result["msg"] = str(msg)
-    return HttpResponse(json.dumps(result), content_type="application/json")
-
-
-# 退出登录
-def sign_out(request):
-    user = request.user
-    logout(request)
-    # 如果开启了钉钉认证，重定向到钉钉退出登录页面
-    if user.ding_user_id and settings.ENABLE_DINGDING:
-        return HttpResponseRedirect(
-            redirect_to="https://login.dingtalk.com/oauth2/logout"
-        )
-    return HttpResponseRedirect(reverse("sql:login"))

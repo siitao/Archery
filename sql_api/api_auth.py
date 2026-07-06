@@ -59,22 +59,28 @@ class AuthenticateView(views.APIView):
         if result["status"] == 0:
             authenticated_user = result["data"]
             twofa_enabled = TwoFactorAuthConfig.objects.filter(user=authenticated_user)
-            # 是否开启全局 2fa
-            if SysConfig().get("enforce_2fa"):
-                verify_mode = "verify_only" if twofa_enabled else "verify_config"
-            else:
-                verify_mode = "verify_only" if twofa_enabled else None
+            enforce_2fa = SysConfig().get("enforce_2fa")
 
-            if verify_mode:  # 需要 2FA：建临时会话
+            # enforce_2fa 开启但用户未配置 2FA：拒绝登录（首次绑定流程已废弃）
+            if enforce_2fa and not twofa_enabled:
+                return JsonResponse(
+                    {
+                        "status": 1,
+                        "msg": "管理员已开启强制两步验证，但你尚未配置 2FA，请联系管理员先在用户页绑定。",
+                    }
+                )
+
+            # 已配置 2FA：建临时会话，前端进入 2FA 验证（verify_only）
+            if twofa_enabled:
                 from django.contrib.sessions.backends.db import SessionStore
 
                 s = SessionStore()
                 s["user"] = authenticated_user.username
-                s["verify_mode"] = verify_mode
+                s["verify_mode"] = "verify_only"
                 s.set_expiry(300)
                 s.create()
                 result = {"status": 0, "msg": "ok", "data": s.session_key}
-            else:  # 未设置 2FA，直接登录
+            else:  # 未启用 2FA，直接登录
                 from django.contrib.auth import login as django_login
 
                 django_login(request, authenticated_user)

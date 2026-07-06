@@ -41,13 +41,8 @@ class CheckLoginMiddleware(MiddlewareMixin):
         """未登录时：API 请求返回 401 JSON；页面请求重定向到 /login/。"""
         if not request.user.is_authenticated:
             # 白名单（登录页、SSO 回调等）整体放行
-            if (
-                request.path in IGNORE_URL
-                or re.match(IGNORE_URL_RE, request.path) is not None
-                or (
-                    re.match(r"/user/qrcode/\w+", request.path)
-                    and request.session.get("user")
-                )
+            if request.path in IGNORE_URL or re.match(
+                IGNORE_URL_RE, request.path
             ):
                 return None
 
