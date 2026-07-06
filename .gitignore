@@ -33,3 +33,5 @@ nohup.out
 *.un~
 # 本机开发依赖清单（Windows + Python 3.11 专用，不入库）
 requirements-local.txt
+# 二进制安装包（离线 wheel 等），不入库
+*.whl

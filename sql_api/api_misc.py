@@ -1,5 +1,5 @@
 """
-binlog / My2SQL / 查询 / 审计 DRF APIView 集 · 收尾所有剩余旧端点。
+binlog / My2SQL / 查询 / 审计 / 回滚 / 导出 DRF APIView 集 · 收尾所有剩余旧端点。
 
 覆盖：
   sql/binlog.py          → binlog_list, my2sql
@@ -8,9 +8,10 @@ binlog / My2SQL / 查询 / 审计 DRF APIView 集 · 收尾所有剩余旧端点
   sql/sql_workflow.py    → list_audit, backup_sql, osc_control
   sql/query_privileges.py → applylist, userprivileges, applyforprivileges, modifyprivileges
   sql/instance.py        → schemasync
-  sql/views.py           → sqlexport_pre_check (已在 views.py 保留, 不动)
-  common/config.py       → change_config (已在 urls.py 保留, 不动)
-  common/check.py        → go_inception (已在 urls.py 保留, 不动)
+  sql/views.py           → rollback_download, sqlexport_pre_check
+  sql/offlinedownload.py → offline_file_download
+  common/config.py       → change_config (移至 api_config.ChangeConfigView)
+  common/check.py        → go_inception (移至 api_config.CheckInceptionView)
 
 路由：
   POST /api/v1/audit/log/                 — 通用审计日志
@@ -28,6 +29,9 @@ binlog / My2SQL / 查询 / 审计 DRF APIView 集 · 收尾所有剩余旧端点
   POST /api/v1/sqlworkflow/list_audit/    — (旧) SQL 上线审计列表
   POST /api/v1/sqlworkflow/osc_control/   — OSC 进度控制
   POST /api/v1/schemasync/                — SchemaSync 对比
+  GET  /api/v1/rollback/                  — 下载回滚 SQL 文件
+  POST /api/v1/sqlexport/pre_check/       — 数据导出预检
+  GET  /api/v1/downloadfile/              — 下载导出文件
 """
 import datetime as _dt
 import json as _json
@@ -789,3 +793,182 @@ class SchemaSyncView(APIView):
 
         result["data"]["diff_stdout"] = diff_stdout
         return JsonResponse(result)
+
+
+# ========== 回滚 / 导出（文件流 + 预检） ==========
+# 替代 sql/views.py:rollback_download、sqlexport_pre_check、sql/offlinedownload.py:offline_file_download
+
+class RollbackDownloadView(APIView):
+    """下载工单回滚 SQL 文件（GET /api/v1/rollback/）。
+
+    与旧 /rollback/ 行为一致：can_rollback 校验 → 生成 .sql → FileResponse。
+    错误分支返回 JSON（旧实现 render error.html，SPA 友好化）。
+    """
+
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        from sql.utils.sql_review import can_rollback
+        from sql.models import SqlWorkflow
+        from django.shortcuts import get_object_or_404
+        from django.core.exceptions import PermissionDenied
+
+        workflow_id = request.GET.get("workflow_id")
+        if not can_rollback(request.user, workflow_id):
+            raise PermissionDenied
+        if not workflow_id:
+            return JsonResponse({"status": 1, "msg": "workflow_id参数为空."}, status=400)
+
+        workflow = get_object_or_404(SqlWorkflow, id=int(workflow_id))
+        try:
+            query_engine = get_engine(instance=workflow.instance)
+            list_backup_sql = query_engine.get_rollback(workflow=workflow)
+        except Exception as msg:
+            logger.error(traceback.format_exc())
+            return JsonResponse({"status": 1, "msg": str(msg)}, status=500)
+
+        path = os.path.join(settings.BASE_DIR, "downloads/rollback")
+        os.makedirs(path, exist_ok=True)
+        file_name = f"{path}/rollback_{workflow_id}.sql"
+        with open(file_name, "w") as f:
+            for sql in list_backup_sql:
+                f.write(f"/*{sql[0]}*/\n{sql[1]}\n")
+
+        response = FileResponse(open(file_name, "rb"))
+        response["Content-Type"] = "application/octet-stream"
+        response["Content-Disposition"] = (
+            f'attachment;filename="rollback_{workflow_id}.sql"'
+        )
+        return response
+
+
+class SqlexportPreCheckView(APIView):
+    """数据导出预检（POST /api/v1/sqlexport/pre_check/）。
+
+    替代 sql/views.py:sqlexport_pre_check，权限校验从装饰器
+    @permission_required('sql.sqlexport_submit') 改为视图内 has_perm 检查。
+    返回旧 {status,msg,data} 信封不变。
+    """
+
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        if not (request.user.is_superuser or request.user.has_perm("sql.sqlexport_submit")):
+            return JsonResponse(
+                {"status": 1, "msg": "无数据导出权限"}, status=403
+            )
+
+        from sql.offlinedownload import OffLineDownLoad
+
+        result = {"status": 0, "msg": "ok", "data": {}}
+        instance_name = request.data.get("instance_name")
+        db_name = request.data.get("db_name")
+        sql_content = request.data.get("sql_content")
+
+        if not instance_name or not db_name or not sql_content:
+            result["status"] = 1
+            result["msg"] = "页面提交参数可能为空"
+            return JsonResponse(result)
+
+        try:
+            instance = user_instances(request.user, tag_codes=["can_read"]).get(
+                instance_name=instance_name
+            )
+        except Instance.DoesNotExist:
+            result["status"] = 1
+            result["msg"] = "你所在组未关联该实例"
+            return JsonResponse(result)
+
+        instance.sql_content = sql_content
+        instance.selected_db_name = db_name
+        check_result = OffLineDownLoad().pre_count_check(workflow=instance)
+        result["data"] = {
+            "error_count": check_result.error_count,
+            "warning_count": check_result.warning_count,
+            "rows": check_result.to_dict(),
+        }
+        if check_result.error_count:
+            result["status"] = 1
+            result["msg"] = (
+                check_result.rows[0].errormessage if check_result.rows else ""
+            )
+        return JsonResponse(result)
+
+
+class DownloadFileView(APIView):
+    """下载导出文件（GET /api/v1/downloadfile/）。
+
+    替代 sql/offlinedownload.py:offline_file_download。
+    local/sftp → 文件流；s3c/azure → JSON {type:'redirect',url}。
+    """
+
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        from sql.storage import DynamicStorage
+        from sql.models import AuditEntry
+        try:
+            from sql.offlinedownload import StorageFileResponse
+        except ImportError:
+            from django.http import FileResponse as StorageFileResponse
+
+        file_name = request.GET.get("file_name", " ")
+        workflow_id = request.GET.get("workflow_id", " ")
+        action = "离线下载"
+        extra_info = f"工单id：{workflow_id}，文件：{file_name}"
+        config = SysConfig()
+        storage_type = config.get("storage_type", "local")
+        storage = DynamicStorage()
+
+        try:
+            if not storage.exists(file_name):
+                extra_info += "，error:文件不存在。"
+                return JsonResponse({"error": "文件不存在"}, status=404)
+
+            if storage_type in ["sftp", "local"]:
+                try:
+                    file = storage.open(file_name, "rb")
+                    file_size = storage.size(file_name)
+                    response = StorageFileResponse(file, storage=storage)
+                    response["Content-Disposition"] = (
+                        f'attachment; filename="{file_name}"'
+                    )
+                    response["Content-Length"] = str(file_size)
+                    response["Content-Encoding"] = "identity"
+                    return response
+                except Exception as e:
+                    extra_info += f"，error:{e}"
+                    logger.error(extra_info)
+                    return JsonResponse(
+                        {"error": "文件下载失败：请联系管理员。"}, status=500
+                    )
+
+            if storage_type in ["s3c", "azure"]:
+                try:
+                    presigned_url = storage.url(file_name)
+                    return JsonResponse({"type": "redirect", "url": presigned_url})
+                except Exception as e:
+                    extra_info += f"，error:{e}"
+                    logger.error(extra_info)
+                    return JsonResponse(
+                        {"error": "文件下载失败：请联系管理员。"}, status=500
+                    )
+
+            return JsonResponse(
+                {"error": f"不支持的存储类型：{storage_type}"}, status=500
+            )
+
+        except Exception as e:
+            extra_info += f"，error:{e}"
+            logger.error(extra_info)
+            return JsonResponse({"error": "内部错误，请联系管理员。"}, status=500)
+
+        finally:
+            if request.method != "HEAD":
+                AuditEntry.objects.create(
+                    user_id=request.user.id,
+                    user_name=request.user.username,
+                    user_display=request.user.display,
+                    action=action,
+                    extra_info=extra_info,
+                )

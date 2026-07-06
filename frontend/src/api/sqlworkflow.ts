@@ -201,9 +201,9 @@ export async function fetchBackupSql(workflowId: number): Promise<ReviewRow[]> {
   });
 }
 
-/** 下载回滚 SQL 文件（GET /rollback/?workflow_id=&download=true，服务端打包文件流） */
+/** 下载回滚 SQL 文件（GET /api/v1/rollback/?workflow_id=，服务端打包文件流） */
 export function downloadRollback(workflowId: number) {
-  const url = `/rollback/?workflow_id=${workflowId}&download=true`;
+  const url = `/api/v1/rollback/?workflow_id=${workflowId}`;
   const a = document.createElement("a");
   a.href = url;
   a.style.display = "none";

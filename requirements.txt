@@ -42,6 +42,7 @@ tencentcloud-sdk-python==3.0.656
 mozilla-django-oidc==3.0.0
 django-auth-dingding==0.0.3
 django-cas-ng==4.3.0
+ldap3==2.9.1  # 纯 Python LDAP 客户端，用于「认证配置」页 LDAP 连通性测试（生产登录认证仍走 python-ldap）
 cassandra-driver
 httpx
 OpenAI

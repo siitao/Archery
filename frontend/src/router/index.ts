@@ -114,6 +114,12 @@ const routes: RouteRecordRaw[] = [
         meta: { title: "配置项管理" },
       },
       {
+        path: "authconfig",
+        name: "authconfig",
+        component: () => import("@/views/authconfig/Index.vue"),
+        meta: { title: "认证配置", requireSuperuser: true },
+      },
+      {
         path: "sqlquery",
         name: "sqlquery-index",
         component: () => import("@/views/sqlquery/Index.vue"),

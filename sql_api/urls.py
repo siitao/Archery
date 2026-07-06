@@ -11,7 +11,7 @@ from drf_spectacular.views import (
     SpectacularRedocView,
     SpectacularSwaggerView,
 )
-from . import api_user, api_instance, api_workflow, api_sqlquery, api_document, api_query_priv, api_archiver, api_dashboard, api_slowlog, api_config, api_dictionary, api_instance_admin, api_diagnostic, api_slowquery, api_resource_group, api_misc
+from . import api_user, api_instance, api_workflow, api_sqlquery, api_document, api_query_priv, api_archiver, api_dashboard, api_slowlog, api_config, api_auth_config, api_dictionary, api_instance_admin, api_diagnostic, api_slowquery, api_resource_group, api_misc, api_auth
 
 router = routers.DefaultRouter()
 router.register(
@@ -97,7 +97,17 @@ urlpatterns = [
         api_slowlog.SlowQueryTrend.as_view(),
     ),
     path("v1/config/", api_config.ConfigView.as_view()),
+    path("v1/config/change/", api_config.ChangeConfigView.as_view()),
     path("v1/config/check_ai/", api_config.CheckAIConnectionView.as_view()),
+    path("v1/config/check_inception/", api_config.CheckInceptionView.as_view()),
+    # ---- 认证方式配置 ----
+    path("v1/auth_config/", api_auth_config.AuthConfigView.as_view()),
+    path("v1/auth_config/reload/", api_auth_config.ReloadAuthConfigView.as_view()),
+    path("v1/auth_config/test/", api_auth_config.TestAuthConnectionView.as_view()),
+    path("v1/auth/login_options/", api_auth_config.LoginOptionsView.as_view()),
+    # ---- 账号密码登录 / 退出 ----
+    path("v1/authenticate/", api_auth.AuthenticateView.as_view()),
+    path("v1/logout/", api_auth.LogoutView.as_view()),
     # ---- 实例管理 ----
     path("v1/instance/accounts/", api_instance_admin.AccountListView.as_view()),
     path("v1/instance/accounts/create/", api_instance_admin.AccountCreateView.as_view()),
@@ -164,6 +174,10 @@ urlpatterns = [
     path("v1/sqlworkflow/osc_control/", api_misc.OscControlView.as_view()),
     # ---- SchemaSync ----
     path("v1/schemasync/", api_misc.SchemaSyncView.as_view()),
+    # ---- 回滚 / 导出（文件流 + 预检） ----
+    path("v1/rollback/", api_misc.RollbackDownloadView.as_view()),
+    path("v1/sqlexport/pre_check/", api_misc.SqlexportPreCheckView.as_view()),
+    path("v1/downloadfile/", api_misc.DownloadFileView.as_view()),
     # ---- 归档 ----
     path("v1/archive/list/", api_archiver.ArchiveListView.as_view()),
     path("v1/archive/apply/", api_archiver.ArchiveApplyView.as_view()),

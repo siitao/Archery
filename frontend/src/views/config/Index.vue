@@ -25,7 +25,6 @@ const SECTION_ICONS: Record<string, string> = {
   "goInception 配置": "Monitor",
   "功能模块配置": "Setting",
   "通知配置": "Bell",
-  "OIDC 配置": "Lock",
   "AI 配置": "MagicStick",
   "其他配置": "More",
 };

@@ -2,8 +2,8 @@ import request from "@/utils/request";
 import { ElMessage } from "element-plus";
 
 /**
- * Phase 2 批次 1：6 个只读页的旧 JSON 接口封装。
- * 部分接口仍用 POST form-encoded（schemasync / 系统审计 等剩余旧端点）。
+ * Phase 2 批次 1：6 个只读页的接口封装。
+ * 所有端点均已走 /api/v1/（DRF）。部分历史接口（schemasync/审计）仍用 {status,msg,data} 信封。
  */
 
 function checkStatus<T extends { status?: number; msg?: string }>(env: T): T {
@@ -314,7 +314,7 @@ export interface SchemaSyncResult {
   [key: string]: unknown;
 }
 
-/** SchemaSync 对比（POST /instance/schemasync/） */
+/** SchemaSync 对比（POST /api/v1/schemasync/） */
 export function schemaSync(params: {
   instance_name: string;
   db_name: string;

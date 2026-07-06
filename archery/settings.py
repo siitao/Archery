@@ -330,108 +330,166 @@ SIMPLE_JWT = {
 # OIDC
 ENABLE_OIDC = env("ENABLE_OIDC", False)
 if ENABLE_OIDC:
-    INSTALLED_APPS += ("mozilla_django_oidc",)
-    OIDC_USER_ATTR_MAP = env("OIDC_USER_ATTR_MAP")
-    AUTHENTICATION_BACKENDS = (
-        "common.authenticate.oidc_auth.OIDCAuthenticationBackend",
-        "django.contrib.auth.backends.ModelBackend",
-    )
+    try:
+        INSTALLED_APPS += ("mozilla_django_oidc",)
+        OIDC_USER_ATTR_MAP = env("OIDC_USER_ATTR_MAP")
+        AUTHENTICATION_BACKENDS = (
+            "common.authenticate.oidc_auth.OIDCAuthenticationBackend",
+            "django.contrib.auth.backends.ModelBackend",
+        )
 
-    OIDC_RP_WELLKNOWN_URL = env(
-        "OIDC_RP_WELLKNOWN_URL"
-    )  # 例如 https://keycloak.example.com/realms/<your realm>/.well-known/openid-configuration
-    OIDC_RP_CLIENT_ID = env("OIDC_RP_CLIENT_ID")
-    OIDC_RP_CLIENT_SECRET = env("OIDC_RP_CLIENT_SECRET")
+        OIDC_RP_WELLKNOWN_URL = env(
+            "OIDC_RP_WELLKNOWN_URL"
+        )  # 例如 https://keycloak.example.com/realms/<your realm>/.well-known/openid-configuration
+        OIDC_RP_CLIENT_ID = env("OIDC_RP_CLIENT_ID")
+        OIDC_RP_CLIENT_SECRET = env("OIDC_RP_CLIENT_SECRET")
 
-    response = requests.get(OIDC_RP_WELLKNOWN_URL)
-    response.raise_for_status()
-    config = response.json()
-    OIDC_OP_AUTHORIZATION_ENDPOINT = config["authorization_endpoint"]
-    OIDC_OP_TOKEN_ENDPOINT = config["token_endpoint"]
-    OIDC_OP_USER_ENDPOINT = config["userinfo_endpoint"]
-    OIDC_OP_JWKS_ENDPOINT = config["jwks_uri"]
-    OIDC_OP_LOGOUT_ENDPOINT = config["end_session_endpoint"]
+        # 拉取 well-known 端点：缺端点时 OIDC 流程会在实际使用时报错，不阻断启动/重载。
+        OIDC_OP_AUTHORIZATION_ENDPOINT = None
+        OIDC_OP_TOKEN_ENDPOINT = None
+        OIDC_OP_USER_ENDPOINT = None
+        OIDC_OP_JWKS_ENDPOINT = None
+        OIDC_OP_LOGOUT_ENDPOINT = None
+        try:
+            response = requests.get(OIDC_RP_WELLKNOWN_URL, timeout=5)
+            response.raise_for_status()
+            _oidc_wellknown = response.json()
+            OIDC_OP_AUTHORIZATION_ENDPOINT = _oidc_wellknown.get("authorization_endpoint")
+            OIDC_OP_TOKEN_ENDPOINT = _oidc_wellknown.get("token_endpoint")
+            OIDC_OP_USER_ENDPOINT = _oidc_wellknown.get("userinfo_endpoint")
+            OIDC_OP_JWKS_ENDPOINT = _oidc_wellknown.get("jwks_uri")
+            OIDC_OP_LOGOUT_ENDPOINT = _oidc_wellknown.get("end_session_endpoint")
+        except Exception as _oidc_err:
+            logger.warning(
+                "OIDC well-known 端点拉取失败：%s。请在「认证配置」页面检查地址，"
+                "或稍后点「重载认证配置」重试。",
+                _oidc_err,
+            )
 
-    OIDC_RP_SCOPES = env("OIDC_RP_SCOPES", default="openid profile email")
-    OIDC_RP_SIGN_ALGO = env("OIDC_RP_SIGN_ALGO", default="RS256")
+        OIDC_RP_SCOPES = env("OIDC_RP_SCOPES", default="openid profile email")
+        OIDC_RP_SIGN_ALGO = env("OIDC_RP_SIGN_ALGO", default="RS256")
 
-    LOGIN_REDIRECT_URL = "/"
+        # OIDC 登录成功后落到 SPA（nginx 不代理 /dashboard，返回 index.html，SPA 接管）
+        LOGIN_REDIRECT_URL = "/dashboard"
+    except Exception as _oidc_init_err:
+        # OIDC 配置不完整（缺必填项等）：不阻断启动，降级为仅本地登录
+        ENABLE_OIDC = False
+        logger.warning(
+            "OIDC 初始化失败，已临时禁用 OIDC（本地登录不受影响）：%s。"
+            "请在「认证配置」页面补全参数后重试。",
+            _oidc_init_err,
+        )
 
 # Dingding
 ENABLE_DINGDING = env("ENABLE_DINGDING", False)
 if ENABLE_DINGDING:
-    INSTALLED_APPS += ("django_auth_dingding",)
-    AUTHENTICATION_BACKENDS = (
-        "common.authenticate.dingding_auth.DingdingAuthenticationBackend",
-        "django.contrib.auth.backends.ModelBackend",
-    )
-    AUTH_DINGDING_AUTHENTICATION_CALLBACK_URL = env(
-        "AUTH_DINGDING_AUTHENTICATION_CALLBACK_URL"
-    )
-    AUTH_DINGDING_APP_KEY = env("AUTH_DINGDING_APP_KEY")
-    AUTH_DINGDING_APP_SECRET = env("AUTH_DINGDING_APP_SECRET")
+    try:
+        INSTALLED_APPS += ("django_auth_dingding",)
+        AUTHENTICATION_BACKENDS = (
+            "common.authenticate.dingding_auth.DingdingAuthenticationBackend",
+            "django.contrib.auth.backends.ModelBackend",
+        )
+        AUTH_DINGDING_AUTHENTICATION_CALLBACK_URL = env(
+            "AUTH_DINGDING_AUTHENTICATION_CALLBACK_URL"
+        )
+        AUTH_DINGDING_APP_KEY = env("AUTH_DINGDING_APP_KEY")
+        AUTH_DINGDING_APP_SECRET = env("AUTH_DINGDING_APP_SECRET")
+        # 钉钉登录成功后落到 SPA（django_auth_dingding 读此配置）
+        AUTH_DINGDING_LOGIN_REDIRECT_URL = "/dashboard"
+    except Exception as _dingding_init_err:
+        ENABLE_DINGDING = False
+        logger.warning(
+            "钉钉初始化失败，已临时禁用（本地登录不受影响）：%s。"
+            "请在「认证配置」页面补全参数后重试。",
+            _dingding_init_err,
+        )
 
 # LDAP
 ENABLE_LDAP = env("ENABLE_LDAP", False)
 if ENABLE_LDAP:
-    import ldap
-    from django_auth_ldap.config import LDAPSearch
+    try:
+        import ldap
+        from django_auth_ldap.config import LDAPSearch
 
-    AUTHENTICATION_BACKENDS = (
-        "django_auth_ldap.backend.LDAPBackend",  # 配置为先使用LDAP认证，如通过认证则不再使用后面的认证方式
-        "django.contrib.auth.backends.ModelBackend",  # django系统中手动创建的用户也可使用，优先级靠后。注意这2行的顺序
-    )
+        AUTHENTICATION_BACKENDS = (
+            "django_auth_ldap.backend.LDAPBackend",  # 配置为先使用LDAP认证，如通过认证则不再使用后面的认证方式
+            "django.contrib.auth.backends.ModelBackend",  # django系统中手动创建的用户也可使用，优先级靠后。注意这2行的顺序
+        )
 
-    AUTH_LDAP_SERVER_URI = env("AUTH_LDAP_SERVER_URI", default="ldap://xxx")
-    AUTH_LDAP_USER_DN_TEMPLATE = env("AUTH_LDAP_USER_DN_TEMPLATE", default=None)
-    if not AUTH_LDAP_USER_DN_TEMPLATE:
-        del AUTH_LDAP_USER_DN_TEMPLATE
-        AUTH_LDAP_BIND_DN = env(
-            "AUTH_LDAP_BIND_DN", default="cn=xxx,ou=xxx,dc=xxx,dc=xxx"
+        AUTH_LDAP_SERVER_URI = env("AUTH_LDAP_SERVER_URI", default="ldap://xxx")
+        AUTH_LDAP_USER_DN_TEMPLATE = env("AUTH_LDAP_USER_DN_TEMPLATE", default=None)
+        if not AUTH_LDAP_USER_DN_TEMPLATE:
+            del AUTH_LDAP_USER_DN_TEMPLATE
+            AUTH_LDAP_BIND_DN = env(
+                "AUTH_LDAP_BIND_DN", default="cn=xxx,ou=xxx,dc=xxx,dc=xxx"
+            )
+            AUTH_LDAP_BIND_PASSWORD = env("AUTH_LDAP_BIND_PASSWORD", default="***********")
+            AUTH_LDAP_USER_SEARCH_BASE = env(
+                "AUTH_LDAP_USER_SEARCH_BASE", default="ou=xxx,dc=xxx,dc=xxx"
+            )
+            AUTH_LDAP_USER_SEARCH_FILTER = env(
+                "AUTH_LDAP_USER_SEARCH_FILTER", default="(cn=%(user)s)"
+            )
+            AUTH_LDAP_USER_SEARCH = LDAPSearch(
+                AUTH_LDAP_USER_SEARCH_BASE, ldap.SCOPE_SUBTREE, AUTH_LDAP_USER_SEARCH_FILTER
+            )
+        AUTH_LDAP_ALWAYS_UPDATE_USER = env(
+            "AUTH_LDAP_ALWAYS_UPDATE_USER", default=True
+        )  # 每次登录从ldap同步用户信息
+        AUTH_LDAP_USER_ATTR_MAP = env("AUTH_LDAP_USER_ATTR_MAP")
+    except ImportError:
+        # python-ldap 未安装（Windows 常见）：不阻断启动，降级为仅本地登录
+        ENABLE_LDAP = False
+        logger.warning(
+            "未安装 python-ldap（django-auth-ldap 依赖），已临时禁用 LDAP（本地登录不受影响）。"
+            "Linux 安装：pip install django-auth-ldap；Windows 可在 WSL/Docker 中运行。"
         )
-        AUTH_LDAP_BIND_PASSWORD = env("AUTH_LDAP_BIND_PASSWORD", default="***********")
-        AUTH_LDAP_USER_SEARCH_BASE = env(
-            "AUTH_LDAP_USER_SEARCH_BASE", default="ou=xxx,dc=xxx,dc=xxx"
+    except Exception as _ldap_init_err:
+        ENABLE_LDAP = False
+        logger.warning(
+            "LDAP 初始化失败，已临时禁用 LDAP（本地登录不受影响）：%s。"
+            "请在「认证配置」页面补全参数后重试。",
+            _ldap_init_err,
         )
-        AUTH_LDAP_USER_SEARCH_FILTER = env(
-            "AUTH_LDAP_USER_SEARCH_FILTER", default="(cn=%(user)s)"
-        )
-        AUTH_LDAP_USER_SEARCH = LDAPSearch(
-            AUTH_LDAP_USER_SEARCH_BASE, ldap.SCOPE_SUBTREE, AUTH_LDAP_USER_SEARCH_FILTER
-        )
-    AUTH_LDAP_ALWAYS_UPDATE_USER = env(
-        "AUTH_LDAP_ALWAYS_UPDATE_USER", default=True
-    )  # 每次登录从ldap同步用户信息
-    AUTH_LDAP_USER_ATTR_MAP = env("AUTH_LDAP_USER_ATTR_MAP")
 
 # CAS认证
 ENABLE_CAS = env("ENABLE_CAS", default=False)
 if ENABLE_CAS:
-    INSTALLED_APPS += ("django_cas_ng",)
-    MIDDLEWARE += ("django_cas_ng.middleware.CASMiddleware",)
-    AUTHENTICATION_BACKENDS = (
-        "django.contrib.auth.backends.ModelBackend",
-        "django_cas_ng.backends.CASBackend",
-    )
+    try:
+        INSTALLED_APPS += ("django_cas_ng",)
+        MIDDLEWARE += ("django_cas_ng.middleware.CASMiddleware",)
+        AUTHENTICATION_BACKENDS = (
+            "django.contrib.auth.backends.ModelBackend",
+            "django_cas_ng.backends.CASBackend",
+        )
 
-    # CAS 的地址
-    CAS_SERVER_URL = env("CAS_SERVER_URL")
-    # CAS 版本
-    CAS_VERSION = env("CAS_VERSION")
-    # 存入所有 CAS 服务端返回的 User 数据。
-    CAS_APPLY_ATTRIBUTES_TO_USER = True
-    # 关闭浏览器退出登录
-    SESSION_EXPIRE_AT_BROWSER_CLOSE = True
-    #  忽略  SSL  证书校验
-    CAS_VERIFY_SSL_CERTIFICATE = env("CAS_VERIFY_SSL_CERTIFICATE", default=False)
-    #  忽略来源验证
-    CAS_IGNORE_REFERER = True
-    # https请求问题
-    CAS_FORCE_SSL_SERVICE_URL = env("CAS_FORCE_SSL_SERVICE_URL", default=False)
-    CAS_RETRY_TIMEOUT = 1
-    CAS_RETRY_LOGIN = True
-    CAS_EXTRA_LOGIN_PARAMS = {"renew": True}
-    CAS_LOGOUT_COMPLETELY = True
+        # CAS 的地址
+        CAS_SERVER_URL = env("CAS_SERVER_URL")
+        # CAS 版本
+        CAS_VERSION = env("CAS_VERSION")
+        # 存入所有 CAS 服务端返回的 User 数据。
+        CAS_APPLY_ATTRIBUTES_TO_USER = True
+        # 关闭浏览器退出登录
+        SESSION_EXPIRE_AT_BROWSER_CLOSE = True
+        #  忽略  SSL  证书校验
+        CAS_VERIFY_SSL_CERTIFICATE = env("CAS_VERIFY_SSL_CERTIFICATE", default=False)
+        #  忽略来源验证
+        CAS_IGNORE_REFERER = True
+        # https请求问题
+        CAS_FORCE_SSL_SERVICE_URL = env("CAS_FORCE_SSL_SERVICE_URL", default=False)
+        CAS_RETRY_TIMEOUT = 1
+        CAS_RETRY_LOGIN = True
+        CAS_EXTRA_LOGIN_PARAMS = {"renew": True}
+        CAS_LOGOUT_COMPLETELY = True
+        # CAS 登录成功后落到 SPA（django_cas_ng 在 CAS_IGNORE_REFERER=True 时用此配置）
+        CAS_REDIRECT_URL = "/dashboard"
+    except Exception as _cas_init_err:
+        ENABLE_CAS = False
+        logger.warning(
+            "CAS 初始化失败，已临时禁用 CAS（本地登录不受影响）：%s。"
+            "请在「认证配置」页面补全参数后重试。",
+            _cas_init_err,
+        )
 
 SUPPORTED_AUTHENTICATION = [
     ("LDAP", ENABLE_LDAP),

@@ -5,11 +5,12 @@ import { ElMessage, type FormInstance, type FormRules } from "element-plus";
 import { User, Lock } from "@element-plus/icons-vue";
 import { useAuthStore } from "@/stores/auth";
 import { setCookie } from "@/utils/auth";
-import { legacyBase } from "@/utils/request";
 import {
   fetch2faContext,
   fetch2faVerify,
   send2faSms,
+  fetchLoginOptions,
+  type LoginOptions,
   type TwoFaContext,
 } from "@/api/user";
 
@@ -25,6 +26,9 @@ const rules: FormRules = {
   username: [{ required: true, message: "请输入用户名", trigger: "blur" }],
   password: [{ required: true, message: "请输入密码", trigger: "blur" }],
 };
+
+// SSO 登录选项（未登录态从后端拉取，决定是否显示 OIDC/钉钉/CAS 按钮）
+const loginOptions = ref<LoginOptions | null>(null);
 
 // 2FA 状态
 const twoFaMode = ref(false);
@@ -44,6 +48,14 @@ onMounted(() => {
       /* 未登录，停留 */
     }
   );
+  // 拉取 SSO 选项（AllowAny，未登录可访问）
+  fetchLoginOptions()
+    .then((opts) => {
+      loginOptions.value = opts;
+    })
+    .catch(() => {
+      /* 拉取失败不影响本地登录 */
+    });
 });
 
 async function onSubmit() {
@@ -191,6 +203,31 @@ function backToLogin() {
 
       <!-- 账号密码 -->
       <template v-else>
+        <!-- SSO 登录按钮（整页跳转，非 axios） -->
+        <a
+          v-if="loginOptions?.oidc_enabled"
+          class="sso-btn"
+          :href="loginOptions.oidc_login_url"
+        >
+          {{ loginOptions.oidc_btn_name || "以 OIDC 登录" }}
+        </a>
+        <a
+          v-else-if="loginOptions?.dingding_enabled"
+          class="sso-btn"
+          :href="loginOptions.dingding_login_url"
+        >
+          以钉钉登录
+        </a>
+        <a
+          v-else-if="loginOptions?.cas_enabled"
+          class="sso-btn"
+          :href="loginOptions.cas_login_url"
+        >
+          CAS 认证登录
+        </a>
+        <div v-if="loginOptions && (loginOptions.oidc_enabled || loginOptions.dingding_enabled || loginOptions.cas_enabled)" class="sso-divider">
+          <span>或使用账号密码</span>
+        </div>
         <el-form
           ref="formRef"
           :model="form"
@@ -225,9 +262,6 @@ function backToLogin() {
             登录
           </el-button>
         </el-form>
-        <div class="login-footer">
-          <a :href="`${legacyBase}/login/`">SSO / 注册 / 传统登录</a>
-        </div>
       </template>
     </div>
   </div>
@@ -280,76 +314,43 @@ function backToLogin() {
   margin-top: 4px;
 }
 
+.sso-btn {
+  display: block;
+  width: 100%;
+  padding: 10px 0;
+  margin-bottom: 12px;
+  text-align: center;
+  font-size: 15px;
+  color: #fff;
+  background: #1e3a8a;
+  border-radius: 6px;
+  text-decoration: none;
+  transition: background 0.2s;
+  &:hover {
+    background: #1e40af;
+  }
+}
+
+.sso-divider {
+  display: flex;
+  align-items: center;
+  text-align: center;
+  margin: 8px 0 16px;
+  color: #9ca3af;
+  font-size: 12px;
+  &::before,
+  &::after {
+    content: "";
+    flex: 1;
+    border-bottom: 1px solid #e5e7eb;
+  }
+  span {
+    padding: 0 12px;
+  }
+}
+
 .back-btn {
   width: 100%;
   margin-top: 10px;
-}
-
-.login-footer {
-  margin-top: 18px;
-  text-align: center;
-  font-size: 13px;
-
-  a {
-    color: #6b7280;
-    text-decoration: none;
-    &:hover {
-      color: #1e3a8a;
-    }
-  }
-}
-</style>
-
-<style scoped lang="scss">
-.login-page {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  min-height: 100vh;
-  background: linear-gradient(135deg, #1e3a8a 0%, #0f172a 100%);
-}
-
-.login-card {
-  width: 380px;
-  padding: 40px 36px 28px;
-  background: #fff;
-  border-radius: 12px;
-  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.25);
-}
-
-.login-brand {
-  text-align: center;
-  margin-bottom: 28px;
-
-  h1 {
-    margin: 0;
-    font-size: 30px;
-    font-weight: 700;
-    color: #1e3a8a;
-  }
-  p {
-    margin: 8px 0 0;
-    color: #6b7280;
-    font-size: 14px;
-  }
-}
-
-.login-btn {
-  width: 100%;
-  margin-top: 4px;
-}
-
-.login-footer {
-  margin-top: 18px;
-  text-align: center;
-  font-size: 13px;
-
-  a {
-    color: #6b7280;
-    text-decoration: none;
-    &:hover {
-      color: #1e3a8a;
-    }
-  }
 }
 </style>

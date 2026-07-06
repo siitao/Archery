@@ -33,7 +33,6 @@ export const CONFIG_SECTIONS = [
   "goInception 配置",
   "功能模块配置",
   "通知配置",
-  "OIDC 配置",
   "AI 配置",
   "其他配置",
 ] as const;
@@ -177,8 +176,7 @@ export const CONFIG_FIELDS: ConfigField[] = [
   { key: "tencent_template_id", label: "腾讯云模板ID", type: "text", section: "通知配置", subsection: "短信发送", showWhen: { key: "sms_provider", value: "tencent" } },
   { key: "tencent_sdk_appid", label: "腾讯云 SDKAppID", type: "text", section: "通知配置", subsection: "短信发送", showWhen: { key: "sms_provider", value: "tencent" } },
 
-  // ── OIDC 配置 ──────────────────────────────────
-  { key: "oidc_btn_name", label: "OIDC 按钮名称", type: "text", section: "OIDC 配置" },
+  // OIDC 配置已迁移到「系统管理 → 认证配置」页面（含 oidc_btn_name 等）
 
   // ── AI 配置 ──────────────────────────────────
   { key: "openai_base_url", label: "AI 服务商地址", type: "text", section: "AI 配置", desc: "OpenAI 兼容的 API 地址，如 https://api.openai.com/v1" },
@@ -194,7 +192,6 @@ export const CONFIG_FIELDS: ConfigField[] = [
   { key: "api_user_whitelist", label: "API 用户白名单", type: "select", section: "其他配置", dynamic: "users" },
   { key: "lock_time_threshold", label: "锁定时间阈值", type: "number", section: "其他配置" },
   { key: "lock_cnt_threshold", label: "锁定次数阈值", type: "number", section: "其他配置" },
-  { key: "sign_up_enabled", label: "允许注册", type: "boolean", section: "其他配置" },
   { key: "watermark_enabled", label: "开启水印", type: "boolean", section: "其他配置" },
   { key: "enforce_2fa", label: "强制 2FA", type: "boolean", section: "其他配置" },
   { key: "announcement_content_enabled", label: "公告开关", type: "boolean", section: "其他配置" },

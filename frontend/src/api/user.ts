@@ -16,22 +16,40 @@ export function fetchCurrentUser() {
   return request.get<CurrentUser>("/api/v1/user/me/");
 }
 
-/** /authenticate/ 旧信封结果：status 0 成功；data=null 已登录，data=sessionKey 需 2FA；1 失败；3 锁定 */
+/** /api/v1/authenticate/ 旧信封结果：status 0 成功；data=null 已登录，data=sessionKey 需 2FA；1 失败；3 锁定 */
 export interface AuthResult extends LegacyEnvelope<string | null> {}
 
 export function authenticate(username: string, password: string) {
-  // 服务端用 request.POST 读取，需表单编码
+  // 服务端 DRF 视图同时支持 form-encoded 与 JSON；这里沿用 form 兼容旧信封
   const form = new URLSearchParams();
   form.append("username", username);
   form.append("password", password);
-  return request.post<AuthResult>("/authenticate/", form, {
+  return request.post<AuthResult>("/api/v1/authenticate/", form, {
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
   });
 }
 
-/** 退出登录（服务端 sign_out 会 302，忽略响应体即可） */
+/** 退出登录（POST /api/v1/logout/，启用钉钉认证时服务端会 302） */
 export function logout() {
-  return request.post("/logout/");
+  return request.post("/api/v1/logout/");
+}
+
+// ============ 登录页 SSO 选项（未登录态可访问） ============
+
+export interface LoginOptions {
+  auth_provider: string;
+  oidc_enabled: boolean;
+  dingding_enabled: boolean;
+  cas_enabled: boolean;
+  oidc_btn_name: string;
+  oidc_login_url: string;
+  dingding_login_url: string;
+  cas_login_url: string;
+}
+
+/** 登录页 SSO 选项（GET /api/v1/auth/login_options/，AllowAny） */
+export function fetchLoginOptions() {
+  return request.get<LoginOptions>("/api/v1/auth/login_options/").then((r) => r.data);
 }
 
 // ============ 2FA（密码校验通过后，临时会话已建立） ============

@@ -153,13 +153,6 @@ class TestView(TransactionTestCase):
         r = self.client.get("/index/", data=data)
         self.assertRedirects(r, f"/sqlworkflow/", fetch_redirect_response=False)
 
-    def test_dashboard(self):
-        """测试dashboard页面"""
-        data = {}
-        r = self.client.get("/dashboard/", data=data)
-        self.assertEqual(r.status_code, 200)
-        self.assertContains(r, "SQL上线工单")
-
     def test_sqlworkflow(self):
         """测试sqlworkflow页面"""
         data = {}
@@ -297,18 +290,6 @@ class TestView(TransactionTestCase):
         data = {}
         r = self.client.get(f"/grouprelations/{self.res_group.group_id}/", data=data)
         self.assertEqual(r.status_code, 200)
-
-    def test_workflows(self):
-        """测试workflows页面"""
-        data = {}
-        r = self.client.get(f"/workflow/", data=data)
-        self.assertEqual(r.status_code, 200)
-
-    def test_workflowsdetail(self):
-        """测试workflows页面"""
-        data = {}
-        r = self.client.get(f"/workflow/{self.audit.audit_id}/", data=data)
-        self.assertRedirects(r, f"/queryapplydetail/1/", fetch_redirect_response=False)
 
     def test_dbaprinciples(self):
         """测试workflows页面"""

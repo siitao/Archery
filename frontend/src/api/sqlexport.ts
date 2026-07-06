@@ -39,19 +39,8 @@ export interface ExportPreCheckResult {
   rows: ReviewRow[];
 }
 
-function form(obj: Record<string, unknown>) {
-  const f = new URLSearchParams();
-  for (const [k, v] of Object.entries(obj)) {
-    if (v === undefined || v === null) continue;
-    f.append(k, typeof v === "string" ? v : String(v));
-  }
-  return f;
-}
-
-const FORM_HEADERS = { "Content-Type": "application/x-www-form-urlencoded" };
-
 /**
- * 导出预检（POST /sqlexport/pre_check/）。服务端内置 max_export_rows 阈值校验。
+ * 导出预检（POST /api/v1/sqlexport/pre_check/）。服务端内置 max_export_rows 阈值校验。
  * 注意：校验「未通过」时 status=1 但 data 仍带 error_count/rows，需交给 UI 按 error_count 判断；
  * 仅当无 data（参数缺失/实例未关联）时视为请求级错误抛出。
  */
@@ -62,9 +51,8 @@ export function exportPreCheck(params: {
 }) {
   return request
     .post<{ status: number; msg: string; data?: ExportPreCheckResult }>(
-      "/sqlexport/pre_check/",
-      form(params),
-      { headers: FORM_HEADERS }
+      "/api/v1/sqlexport/pre_check/",
+      params
     )
     .then((res) => {
       const e = res.data;
@@ -81,12 +69,12 @@ export function exportPreCheck(params: {
 }
 
 /**
- * 下载导出文件（GET /downloadfile/）。
+ * 下载导出文件（GET /api/v1/downloadfile/）。
  * local/sftp 返回文件流（直接触发下载）；云存储（s3c/azure）返回 JSON {type:'redirect',url} 重定向；
  * 文件不存在/失败返回 JSON {error}。复刻旧版 detail.html 的探测+分流逻辑。
  */
 export async function downloadExportFile(workflowId: number, fileName: string) {
-  const filePath = `/downloadfile/?file_name=${encodeURIComponent(fileName)}&workflow_id=${workflowId}`;
+  const filePath = `/api/v1/downloadfile/?file_name=${encodeURIComponent(fileName)}&workflow_id=${workflowId}`;
   // HEAD 探测：JSON 响应=重定向或错误；否则=文件流
   const head = await fetch(filePath, { method: "HEAD", cache: "no-store" });
   const ct = head.headers.get("content-type") || "";

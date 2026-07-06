@@ -59,7 +59,18 @@ service.interceptors.response.use(
     else if (data?.msg) msg = data.msg;
     else if (data?.detail) msg = data.detail;
     else if (data?.message) msg = data.message;
-    if (msg) ElMessage.error(msg);
+    // 防御：当响应体是 HTML（Django 异常页/登录重定向页等）或超长内容时，
+    // 不要把整段原文弹到页面，改用通用提示
+    if (msg) {
+      const looksLikeHtml = /^\s*</.test(msg) || /<!doctype/i.test(msg);
+      const tooLong = msg.length > 200;
+      if (looksLikeHtml || tooLong) {
+        msg = `服务器错误（${status ?? "未知状态"}），请稍后重试或联系管理员`;
+      }
+      ElMessage.error(msg);
+    } else if (status && status >= 500) {
+      ElMessage.error(`服务器错误（${status}），请稍后重试或联系管理员`);
+    }
 
     return Promise.reject(error);
   }

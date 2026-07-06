@@ -81,6 +81,7 @@ export const menuItems: MenuItem[] = [
     perm: "sql.menu_system",
     children: [
       { title: "配置项管理", routeName: "config" },
+      { title: "认证配置", routeName: "authconfig" },
       { title: "资源组管理", routeName: "resourcegroup" },
     ],
   },
