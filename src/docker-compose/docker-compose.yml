@@ -57,7 +57,7 @@ services:
     ports:
       - "9123:9123"
     volumes:
-      - "./archery/settings.py:/opt/archery/local_settings.py"
+      - "./.env:/opt/archery/.env"
       - "./archery/soar.yaml:/etc/soar.yaml"
       - "./archery/docs.md:/opt/archery/docs/docs.md"
       - "./archery/downloads:/opt/archery/downloads"

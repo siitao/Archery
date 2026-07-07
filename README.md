@@ -87,10 +87,54 @@
 
 多阶段构建：`node:22-alpine` 阶段执行 `npm ci && npm run build` 产出 SPA `dist/`，再与 Archery 基础镜像合并，由 nginx 托管前端、反代后端。
 
+**1. 构建镜像**
+
 ```bash
-# 参考上游 docker 部署文档
-# https://github.com/hhyo/archery/wiki/docker
+docker build -f src/docker/Dockerfile -t archery-vue3:v1 .
 ```
+
+**2. 准备 `.env` 与挂载目录**
+
+```bash
+cd src/docker-compose
+cp .env .env            # 仓库自带示例，按需修改数据库密码、NGINX_PORT、CSRF_TRUSTED_ORIGINS
+```
+
+`.env` 同时承担两个职责（见下文「认证配置机制」），**不要遗漏**：
+
+- 供 `startup.sh` 读取 `NGINX_PORT` 等 shell 变量（通过 docker-compose 的 `env_file` 注入）；
+- 供 `settings.py` 的 `environ.read_env()` 与「认证配置」重载逻辑读写（通过 `./.env:/opt/archery/.env` 文件挂载）。
+
+**3. 启动**
+
+```bash
+docker compose up -d
+```
+
+初始化账号：`docker exec -it archery /opt/venv4archery/bin/python3 /opt/archery/manage.py createsuperuser`
+
+> 更多细节可参考上游 [docker 部署文档](https://github.com/hhyo/archery/wiki/docker)。
+
+#### 认证配置机制（重要）
+
+本分支对认证（LDAP / OIDC / 钉钉 / CAS）做了改造，**不再通过 `local_settings.py` 配置**，而是改为「数据库 + 运行时重载」：
+
+```
+后台「认证配置」页面 ──写入──▶ DB（SysConfig / sql_config 表）
+                                   │  点击「重载认证配置」
+                                   ▼
+        common/auth_settings_reload.py
+          1. 把 DB 中的认证配置写回 .env 的「受管标记块」
+             (# === auth config (managed by Archery) === … # === end managed ===)
+          2. 同步 os.environ
+          3. importlib.reload(settings 模块) → AUTHENTICATION_BACKENDS /
+             AUTH_LDAP_* / ENABLE_LDAP 等重新求值
+          4. 清 URL resolver 缓存，使 /oidc/ 等路由按新配置 include
+```
+
+因此 **docker-compose 不再挂载 `local_settings.py`**——它在 `settings.py` 末尾以 `from local_settings import *` 加载，优先级最高，会覆盖上述所有认证配置，导致后台修改 + 重载完全不生效（典型表现：LDAP/SSO 登录始终提示「用户名或密码不正确」）。
+
+如需自定义非认证相关的 settings，请改 `.env`（推荐）或直接进容器修改，不要重新挂载 `local_settings.py`。
 
 ### 本地开发
 
