@@ -375,7 +375,9 @@ def save_csv(file_path, result, columns):
     :param result: 查询结果
     :param columns: 列名
     """
-    with open(file_path, "w", newline="", encoding="utf-8") as csv_file:
+    # 用 utf-8-sig（带 BOM 的 UTF-8）：Excel 双击打开时能自动识别中文，
+    # 避免 Windows Excel 按 ANSI/GBK 解码导致的乱码。其它工具（pandas 等）也兼容。
+    with open(file_path, "w", newline="", encoding="utf-8-sig") as csv_file:
         csv_writer = csv.writer(csv_file, quoting=csv.QUOTE_ALL)
 
         if columns:
@@ -464,7 +466,9 @@ def save_sql(file_path, result, columns):
     :param result: 查询结果
     :param columns: 列名
     """
-    with open(file_path, "w") as sql_file:
+    # 显式指定 utf-8：Windows 默认用 cp936/gbk，会把 UTF-8 中文写成 GBK 字节，
+    # 用 UTF-8 打开就是乱码（¸üÐÂÇ½...）。SQL 文件统一按 utf-8 读写。
+    with open(file_path, "w", encoding="utf-8") as sql_file:
         for row in result:
             table_name = "your_table_name"
             if columns:
