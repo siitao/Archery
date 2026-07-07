@@ -1,3 +1,7 @@
+# 基础镜像 ARG 必须声明在第一个 FROM 之前（全局 ARG），
+# 否则后续 FROM 无法解析（报 base name should not be blank）
+ARG BASE_IMAGE="hhyo/archery-base:sha-d8159f4"
+
 # ---- 前端构建阶段：Vue3 SPA ----
 FROM node:22-alpine AS frontend
 WORKDIR /app
@@ -6,7 +10,7 @@ RUN npm ci
 COPY frontend/ ./
 RUN npm run build
 
-ARG BASE_IMAGE="hhyo/archery-base:sha-d8159f4"
+# ---- 运行时阶段 ----
 FROM ${BASE_IMAGE}
 SHELL ["/bin/bash", "-c"]
 COPY . /opt/archery/
