@@ -78,6 +78,45 @@ def _get_and_check_instance(user, instance_name, db_type=None):
     return i
 
 
+def _apply_sort(qs, request, default=None):
+    """根据 sortName/sortOrder 对 QuerySet 排序。
+
+    前端未传排序参数（空字符串）时回退到 default；字段非法时降级为 default，
+    再不行就不排序，避免 Django 抛 FieldError 导致整个接口 500。
+
+    注意：不能用 ``a or b or qs`` 这种写法 —— 对 QuerySet 求布尔值会触发一次
+    查询并缓存结果，导致后续切片/链式调用（如 ``.values()``）失效。所以这里
+    一律用显式 return。
+    """
+    sort_name = str(request.data.get("sortName") or "").strip()
+    sort_order = str(request.data.get("sortOrder") or "").lower()
+    if not sort_name:
+        sort_name = (default or "").lstrip("-")
+
+    def _try(prefix, name):
+        if not name:
+            return None
+        try:
+            return qs.order_by(prefix + name)
+        except Exception:
+            logger.warning("慢查排序字段无效: %s%s", prefix, name, exc_info=True)
+            return None
+
+    prefix = "-" if sort_order == "desc" else ""
+
+    # 不能用 a or b or qs：对 QuerySet 求布尔值会触发查询并缓存 _result_cache，
+    # 使后续 [offset:limit] 切片返回 list、.values() 失效
+    # （'list' object has no attribute 'values'）。必须用 is not None 判断。
+    ordered = _try(prefix, sort_name)
+    if ordered is not None:
+        return ordered
+    if default:
+        ordered = _try("", default.lstrip("-"))
+        if ordered is not None:
+            return ordered
+    return qs
+
+
 # ========== 慢查统计 ==========
 
 class SlowQueryReviewView(APIView):
@@ -101,8 +140,6 @@ class SlowQueryReviewView(APIView):
             hostnames = query_engine.get_cluster_master_nodes()
             limit = offset + limit
             search = request.data.get("search")
-            sortName = str(request.data.get("sortName") or "")
-            sortOrder = str(request.data.get("sortOrder") or "").lower()
             end_time = _dt.datetime.strptime(end_time, "%Y-%m-%d") + _dt.timedelta(days=1)
             slowsql_obj = (
                 RedisSlowQuery.objects.filter(
@@ -122,8 +159,9 @@ class SlowQueryReviewView(APIView):
                 )
             )
             slow_sql_count = slowsql_obj.count()
-            sort = "-" + sortName if sortOrder == "desc" else sortName
-            slow_sql_list = slowsql_obj.order_by(sort)[offset:limit]
+            slow_sql_list = _apply_sort(
+                slowsql_obj, request, default="-TotalExecutionCounts"
+            )[offset:limit]
             sql_slow_log = []
             for r in slow_sql_list:
                 avg = r["QueryTimeAvg"]
@@ -144,8 +182,6 @@ class SlowQueryReviewView(APIView):
         else:
             limit = offset + limit
             search = request.data.get("search")
-            sortName = str(request.data.get("sortName") or "")
-            sortOrder = str(request.data.get("sortOrder") or "").lower()
             end_time = _dt.datetime.strptime(end_time, "%Y-%m-%d") + _dt.timedelta(days=1)
             filter_kwargs = {"slowqueryhistory__db_max": db_name} if db_name else {}
             slowsql_obj = (
@@ -172,8 +208,9 @@ class SlowQueryReviewView(APIView):
                 )
             )
             slow_sql_count = slowsql_obj.count()
-            sort = "-" + sortName if sortOrder == "desc" else sortName
-            slow_sql_list = slowsql_obj.order_by(sort)[offset:limit]
+            slow_sql_list = _apply_sort(
+                slowsql_obj, request, default="-MySQLTotalExecutionCounts"
+            )[offset:limit]
             sql_slow_log = []
             for r in slow_sql_list:
                 r["QueryTimeAvg"] = round(r["QueryTimeAvg"], 6)
@@ -207,8 +244,6 @@ class SlowQueryReviewHistoryView(APIView):
             query_engine = get_engine(instance=instance_info)
             hostnames = query_engine.get_cluster_master_nodes()
             search = request.data.get("search")
-            sortName = str(request.data.get("sortName") or "")
-            sortOrder = str(request.data.get("sortOrder") or "").lower()
             end_time = _dt.datetime.strptime(end_time, "%Y-%m-%d") + _dt.timedelta(days=1)
             limit = offset + limit
             filter_kwargs = {"checksum": sql_id} if sql_id else {}
@@ -226,10 +261,13 @@ class SlowQueryReviewHistoryView(APIView):
                 HostName=F("hostname"),
             )
             count = slow_sql_record_obj.count()
-            sort = "-" + sortName if sortOrder == "desc" else sortName
-            slow_sql_record_list = slow_sql_record_obj.order_by(sort)[offset:limit].values(
-                "ExecutionStartTime", "SQLText", "TotalExecutionCounts",
-                "QueryTimePct95", "QueryTimes", "HostName",
+            slow_sql_record_list = (
+                _apply_sort(slow_sql_record_obj, request, default="-ExecutionStartTime")[
+                    offset:limit
+                ].values(
+                    "ExecutionStartTime", "SQLText", "TotalExecutionCounts",
+                    "QueryTimePct95", "QueryTimes", "HostName",
+                )
             )
             sql_slow_record = []
             for r in slow_sql_record_list:
@@ -250,8 +288,6 @@ class SlowQueryReviewHistoryView(APIView):
                 result = {"status": 1, "msg": f"获取阿里云RDS慢查询明细失败: {e}", "rows": []}
         else:
             search = request.data.get("search")
-            sortName = str(request.data.get("sortName") or "")
-            sortOrder = str(request.data.get("sortOrder") or "").lower()
             end_time = _dt.datetime.strptime(end_time, "%Y-%m-%d") + _dt.timedelta(days=1)
             limit = offset + limit
             filter_kwargs = {}
@@ -277,11 +313,14 @@ class SlowQueryReviewHistoryView(APIView):
                 ReturnRowCounts=F("rows_sent_sum"),
             )
             count = slow_sql_record_obj.count()
-            sort = "-" + sortName if sortOrder == "desc" else sortName
-            slow_sql_record_list = slow_sql_record_obj.order_by(sort)[offset:limit].values(
-                "ExecutionStartTime", "DBName", "HostAddress", "SQLText",
-                "TotalExecutionCounts", "QueryTimePct95", "QueryTimes",
-                "LockTimes", "ParseRowCounts", "ReturnRowCounts",
+            slow_sql_record_list = (
+                _apply_sort(slow_sql_record_obj, request, default="-ExecutionStartTime")[
+                    offset:limit
+                ].values(
+                    "ExecutionStartTime", "DBName", "HostAddress", "SQLText",
+                    "TotalExecutionCounts", "QueryTimePct95", "QueryTimes",
+                    "LockTimes", "ParseRowCounts", "ReturnRowCounts",
+                )
             )
             sql_slow_record = []
             for r in slow_sql_record_list:

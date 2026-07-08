@@ -29,6 +29,36 @@ function isSqlColumn(col: string): boolean {
   return SQL_COLUMNS.has(col.toLowerCase());
 }
 
+/** 慢查统计/明细字段名 → 中文表头（后端返回驼峰英文字段，映射缺失时回退原字段名） */
+const COLUMN_LABELS: Record<string, string> = {
+  SQLText: "SQL 文本",
+  SQLId: "SQL ID",
+  DBName: "数据库",
+  CreateTime: "最近出现时间",
+  ExecutionStartTime: "执行开始时间",
+  TotalExecutionCounts: "执行次数",
+  TotalExecutionTimes: "总执行耗时",
+  MySQLTotalExecutionCounts: "执行次数",
+  MySQLTotalExecutionTimes: "总执行耗时",
+  QueryTimeAvg: "平均耗时",
+  QueryTimePct95: "95% 耗时",
+  QueryTimes: "执行耗时",
+  DurationPct95: "95% 耗时",
+  ParseTotalRowCounts: "总扫描行数",
+  ReturnTotalRowCounts: "总返回行数",
+  ParseRowAvg: "平均扫描行数",
+  ReturnRowAvg: "平均返回行数",
+  ParseRowCounts: "扫描行数",
+  ReturnRowCounts: "返回行数",
+  HostName: "主机",
+  HostAddress: "客户端地址",
+  LockTimes: "锁等待时间",
+};
+
+function colLabel(col: string): string {
+  return COLUMN_LABELS[col] || col;
+}
+
 async function loadDbs() {
   if (!currentInstance.value) return;
   try {
@@ -205,7 +235,7 @@ onMounted(loadInstances);
               v-for="col in reviewCols"
               :key="col"
               :prop="col"
-              :label="col"
+              :label="colLabel(col)"
               min-width="140"
               :show-overflow-tooltip="!isSqlColumn(col)"
             >
@@ -228,7 +258,7 @@ onMounted(loadInstances);
               v-for="col in historyCols"
               :key="col"
               :prop="col"
-              :label="col"
+              :label="colLabel(col)"
               min-width="140"
               :show-overflow-tooltip="!isSqlColumn(col)"
             >

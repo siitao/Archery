@@ -925,6 +925,182 @@ class TestSpaEndpoints(APITestCase):
         self.assertEqual(len(body["x"]), 2)
         self.assertEqual(len(body["series"]), 2)
 
+    def test_slowquery_review_empty_sort_not_500(self):
+        """回归：前端传空 sortName 时，自建 MySQL 慢查统计不应 500（曾抛 FieldError）。
+
+        用真实表 + 真实数据走完整 ORM 链路，确保排序逻辑（order_by + 切片 +
+        迭代）在真实 QuerySet 上不出错。MagicMock 方式测不出这类问题。
+        """
+        from sql.models import SlowQuery, SlowQueryHistory
+        from django.db import connection
+
+        ins = Instance.objects.create(
+            instance_name="mysql_local",
+            type="master",
+            db_type="mysql",
+            host="127.0.0.1",
+            port=3306,
+        )
+        rg = ResourceGroup.objects.create(group_name="g1")
+        ins.resource_group.add(rg)
+        self._create_slow_query_tables(connection)
+
+        SlowQuery.objects.create(
+            checksum="a" * 32,
+            fingerprint="select sleep(?)",
+            sample="SELECT SLEEP(1)",
+            first_seen="2026-07-08 00:00:00",
+            last_seen="2026-07-08 00:00:00",
+        )
+        SlowQueryHistory.objects.create(
+            hostname_max="127.0.0.1:3306",
+            user_max="root",
+            db_max="archery",
+            checksum=SlowQuery.objects.get(checksum="a" * 32),
+            sample="SELECT SLEEP(1)",
+            ts_min="2026-07-08 00:00:00",
+            ts_max="2026-07-08 00:00:00",
+            ts_cnt=1,
+            query_time_sum=1.0,
+            query_time_pct_95=1.0,
+            lock_time_sum=0.0,
+            rows_examined_sum=0,
+            rows_sent_sum=0,
+        )
+
+        # 关键：不走阿里云分支
+        with patch("sql_api.api_slowquery.AliyunRdsConfig.objects") as mock_rds:
+            mock_rds.filter.return_value.exists.return_value = False
+            r = self.client.post(
+                "/api/v1/slowquery/review/",
+                {
+                    "instance_name": "mysql_local",
+                    "db_name": "",
+                    "StartTime": "",
+                    "EndTime": "",
+                    "limit": 1000,
+                    "offset": 0,
+                    "search": "",
+                    "sortName": "",
+                    "sortOrder": "",
+                },
+                format="json",
+            )
+        self.assertEqual(r.status_code, status.HTTP_200_OK)
+        body = r.json()
+        self.assertEqual(body["total"], 1)
+        self.assertEqual(len(body["rows"]), 1)
+        self.assertEqual(body["rows"][0]["SQLId"], "a" * 32)
+
+    def test_slowquery_review_history_empty_sort_not_500(self):
+        """回归：前端传空 sortName 时，自建 MySQL 慢查明细不应 500。
+
+        此用例曾因 _apply_sort 返回 list（QuerySet 布尔求值触发缓存）而非
+        QuerySet，导致后续 .values() 调用报 AttributeError。
+        """
+        from sql.models import SlowQuery, SlowQueryHistory
+        from django.db import connection
+
+        ins = Instance.objects.create(
+            instance_name="mysql_local2",
+            type="master",
+            db_type="mysql",
+            host="127.0.0.1",
+            port=3306,
+        )
+        rg = ResourceGroup.objects.create(group_name="g2")
+        ins.resource_group.add(rg)
+        self._create_slow_query_tables(connection)
+
+        SlowQuery.objects.create(
+            checksum="b" * 32,
+            fingerprint="select sleep(?)",
+            sample="SELECT SLEEP(2)",
+            first_seen="2026-07-08 00:00:00",
+            last_seen="2026-07-08 00:00:00",
+        )
+        SlowQueryHistory.objects.create(
+            hostname_max="127.0.0.1:3306",
+            user_max="root",
+            db_max="archery",
+            checksum=SlowQuery.objects.get(checksum="b" * 32),
+            sample="SELECT SLEEP(2)",
+            ts_min="2026-07-08 00:00:00",
+            ts_max="2026-07-08 00:00:00",
+            ts_cnt=1,
+            query_time_sum=2.0,
+            query_time_pct_95=2.0,
+            lock_time_sum=0.0,
+            rows_examined_sum=0,
+            rows_sent_sum=0,
+        )
+
+        with patch("sql_api.api_slowquery.AliyunRdsConfig.objects") as mock_rds:
+            mock_rds.filter.return_value.exists.return_value = False
+            r = self.client.post(
+                "/api/v1/slowquery/review_history/",
+                {
+                    "instance_name": "mysql_local2",
+                    "db_name": "",
+                    "StartTime": "",
+                    "EndTime": "",
+                    "SQLId": "",
+                    "limit": 1000,
+                    "offset": 0,
+                    "search": "",
+                    "sortName": "",
+                    "sortOrder": "",
+                },
+                format="json",
+            )
+        self.assertEqual(r.status_code, status.HTTP_200_OK)
+        body = r.json()
+        self.assertEqual(body["total"], 1)
+        self.assertEqual(len(body["rows"]), 1)
+        self.assertEqual(body["rows"][0]["SQLText"], "SELECT SLEEP(2)")
+
+    @staticmethod
+    def _create_slow_query_tables(connection):
+        """建 managed=False 的慢查表（Django 迁移不会自动建）"""
+        with connection.cursor() as cur:
+            cur.execute(
+                """
+                CREATE TABLE IF NOT EXISTS `mysql_slow_query_review` (
+                  `checksum` CHAR(32) NOT NULL PRIMARY KEY,
+                  `fingerprint` longtext NOT NULL,
+                  `sample` longtext NOT NULL,
+                  `first_seen` datetime(6) DEFAULT NULL,
+                  `last_seen` datetime(6) DEFAULT NULL,
+                  `reviewed_by` varchar(20) DEFAULT NULL,
+                  `reviewed_on` datetime(6) DEFAULT NULL,
+                  `comments` longtext
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8
+                """
+            )
+            cur.execute(
+                """
+                CREATE TABLE IF NOT EXISTS `mysql_slow_query_review_history` (
+                  `id` int(11) NOT NULL AUTO_INCREMENT,
+                  `hostname_max` varchar(64) NOT NULL,
+                  `client_max` varchar(64) DEFAULT NULL,
+                  `user_max` varchar(64) NOT NULL,
+                  `db_max` varchar(64) DEFAULT NULL,
+                  `checksum` CHAR(32) NOT NULL,
+                  `sample` longtext NOT NULL,
+                  `ts_min` datetime(6) NOT NULL,
+                  `ts_max` datetime(6) NOT NULL,
+                  `ts_cnt` float DEFAULT NULL,
+                  `Query_time_sum` float DEFAULT NULL,
+                  `Query_time_pct_95` float DEFAULT NULL,
+                  `Lock_time_sum` float DEFAULT NULL,
+                  `Rows_examined_sum` float DEFAULT NULL,
+                  `Rows_sent_sum` float DEFAULT NULL,
+                  PRIMARY KEY (`id`),
+                  KEY `idx_hostname_max_ts_min` (`hostname_max`,`ts_min`)
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8
+                """
+            )
+
     def test_query_priv_audit_param_error(self):
         """查询权限审核：参数缺失返回 status=1"""
         r = self.client.post("/api/v1/query_priv/audit/", {}, format="json")
@@ -989,3 +1165,204 @@ class TestSpaEndpoints(APITestCase):
         # 删除
         d = self.client.delete(f"/api/v1/instance/rds/{rds.id}/")
         self.assertEqual(d.status_code, status.HTTP_204_NO_CONTENT)
+
+
+class AiReviewParserTest(TestCase):
+    """OpenaiClient._parse_review_json 与 review_sql_by_openai 容错测试。"""
+
+    def test_parse_normal_json(self):
+        from common.utils.openai import OpenaiClient
+
+        data = OpenaiClient._parse_review_json(
+            '{"risk_level": "high", "risk_score": 85, '
+            '"summary": "大表加索引", "suggestion": "建议走OSC"}'
+        )
+        self.assertEqual(data["risk_level"], "high")
+        self.assertEqual(data["risk_score"], 85)
+        self.assertEqual(data["summary"], "大表加索引")
+
+    def test_parse_json_wrapped_in_codeblock(self):
+        from common.utils.openai import OpenaiClient
+
+        data = OpenaiClient._parse_review_json(
+            '```json\n{"risk_level": "low", "risk_score": 20, '
+            '"summary": "ok", "suggestion": ""}\n```'
+        )
+        self.assertEqual(data["risk_level"], "low")
+        self.assertEqual(data["risk_score"], 20)
+
+    def test_parse_json_with_extra_text(self):
+        from common.utils.openai import OpenaiClient
+
+        data = OpenaiClient._parse_review_json(
+            '审核结果如下：{"risk_level": "medium", "risk_score": 55, '
+            '"summary": "中风险", "suggestion": "..."} 希望有帮助'
+        )
+        self.assertEqual(data["risk_level"], "medium")
+        self.assertEqual(data["risk_score"], 55)
+
+    def test_parse_invalid_returns_unknown(self):
+        from common.utils.openai import OpenaiClient, AI_RISK_UNKNOWN
+
+        self.assertEqual(
+            OpenaiClient._parse_review_json("not a json at all")["risk_level"],
+            AI_RISK_UNKNOWN,
+        )
+        self.assertEqual(
+            OpenaiClient._parse_review_json("")["risk_level"], AI_RISK_UNKNOWN
+        )
+
+    def test_parse_normalizes_invalid_level_and_score(self):
+        from common.utils.openai import OpenaiClient, AI_RISK_UNKNOWN
+
+        data = OpenaiClient._parse_review_json(
+            '{"risk_level": "weird", "risk_score": "abc", "summary": "x"}'
+        )
+        self.assertEqual(data["risk_level"], AI_RISK_UNKNOWN)
+        self.assertEqual(data["risk_score"], 0)
+
+    def test_review_sql_returns_fallback_on_exception(self):
+        """review_sql_by_openai 内部异常时应返回 unknown，不抛出。"""
+        from common.utils.openai import OpenaiClient, AI_RISK_UNKNOWN
+
+        client = OpenaiClient.__new__(OpenaiClient)  # 跳过 __init__（不读配置）
+        with patch.object(
+            client,
+            "request_chat_completion",
+            side_effect=Exception("network error"),
+        ):
+            result = client.review_sql_by_openai(
+                db_type="mysql",
+                db_name="test",
+                sql_text="select 1",
+                table_schemas="(无)",
+                table_rows="t: 1 行",
+            )
+        self.assertEqual(result["risk_level"], AI_RISK_UNKNOWN)
+
+
+class AiRiskSummaryTest(TestCase):
+    """WorkflowDetail._calc_ai_risk_summary 汇总逻辑测试。"""
+
+    def _summary(self, review_content):
+        from sql_api.api_workflow import WorkflowDetail
+
+        return WorkflowDetail._calc_ai_risk_summary(review_content)
+
+    def test_empty_content_returns_fallback(self):
+        s = self._summary(None)
+        self.assertEqual(s["ai_max_risk_level"], "")
+        self.assertEqual(s["ai_max_risk_score"], 0)
+
+    def test_no_ai_data_returns_fallback(self):
+        s = self._summary(json.dumps([{"sql": "select 1", "errlevel": 0}]))
+        self.assertEqual(s["ai_max_risk_level"], "")
+
+    def test_takes_max_score(self):
+        rows = [
+            {"sql": "a", "ai_risk_level": "low", "ai_risk_score": 20},
+            {"sql": "b", "ai_risk_level": "high", "ai_risk_score": 90},
+            {"sql": "c", "ai_risk_level": "medium", "ai_risk_score": 55},
+        ]
+        s = self._summary(json.dumps(rows))
+        self.assertEqual(s["ai_max_risk_level"], "high")
+        self.assertEqual(s["ai_max_risk_score"], 90)
+        self.assertEqual(s["ai_high_risk_count"], 1)
+
+    def test_counts_multiple_high_risk(self):
+        rows = [
+            {"sql": "a", "ai_risk_level": "high", "ai_risk_score": 80},
+            {"sql": "b", "ai_risk_level": "high", "ai_risk_score": 95},
+        ]
+        s = self._summary(json.dumps(rows))
+        self.assertEqual(s["ai_high_risk_count"], 2)
+        self.assertEqual(s["ai_max_risk_score"], 95)
+
+
+class ExecuteCheckAiIntegrationTest(TestCase):
+    """MysqlEngine._ai_review_check 开关与降级行为测试（mock OpenAI，不连库）。"""
+
+    def _make_engine(self):
+        from sql.engines.mysql import MysqlEngine
+
+        engine = MysqlEngine.__new__(MysqlEngine)  # 跳过 __init__
+        engine.config = MagicMock()
+        engine.config.get = lambda k, d=False: d
+        engine.escape_string = lambda v: v
+        engine.describe_table = MagicMock()
+        engine.get_table_meta_data = MagicMock()
+        return engine
+
+    def _make_reviewset(self, sqls):
+        from sql.engines.models import ReviewResult, ReviewSet
+
+        rows = [ReviewResult(id=i + 1, sql=s) for i, s in enumerate(sqls)]
+        rs = ReviewSet(rows=rows)
+        return rs
+
+    def test_disabled_switch_skips_ai(self):
+        """开关关闭时（默认）不调用 AI，rows 不带 ai 字段。"""
+        engine = self._make_engine()
+        rs = self._make_reviewset(["update t set a=1"])
+        with patch("common.utils.openai.check_openai_config") as mock_check:
+            engine._ai_review_check(rs, "test")
+            mock_check.assert_not_called()
+        self.assertFalse(hasattr(rs.rows[0], "ai_risk_level"))
+
+    def test_no_api_key_skips_ai(self):
+        """开关开启但 API Key 缺失时静默跳过。"""
+        engine = self._make_engine()
+        engine.config.get = lambda k, d=False: True if k == "ai_review_enabled" else d
+        rs = self._make_reviewset(["update t set a=1"])
+        with patch(
+            "common.utils.openai.check_openai_config", return_value=False
+        ), patch("common.utils.openai.OpenaiClient") as mock_client:
+            engine._ai_review_check(rs, "test")
+            mock_client.assert_not_called()
+        self.assertFalse(hasattr(rs.rows[0], "ai_risk_level"))
+
+    def test_ai_failure_marks_unknown(self):
+        """开关+Key 均就绪但 AI 调用抛异常时，该条标记 unknown，不中断。"""
+        from common.utils.openai import AI_RISK_UNKNOWN
+
+        engine = self._make_engine()
+        engine.config.get = lambda k, d=False: True if k == "ai_review_enabled" else d
+        rs = self._make_reviewset(["update t set a=1"])
+        mock_client = MagicMock()
+        mock_client.review_sql_by_openai.side_effect = Exception("AI boom")
+        with patch(
+            "common.utils.openai.check_openai_config", return_value=True
+        ), patch(
+            "common.utils.openai.OpenaiClient", return_value=mock_client
+        ), patch(
+            "sql.engines.mysql.extract_tables", return_value=[]
+        ):
+            engine._ai_review_check(rs, "test")
+        self.assertEqual(rs.rows[0].ai_risk_level, AI_RISK_UNKNOWN)
+        self.assertEqual(rs.rows[0].ai_summary, "AI 审核失败")
+
+    def test_ai_success_attaches_fields(self):
+        """AI 正常返回时，row 挂上 ai_* 字段。"""
+        engine = self._make_engine()
+        engine.config.get = lambda k, d=False: True if k == "ai_review_enabled" else d
+        rs = self._make_reviewset(["update t set a=1"])
+        mock_client = MagicMock()
+        mock_client.review_sql_by_openai.return_value = {
+            "risk_level": "high",
+            "risk_score": 88,
+            "summary": "无 WHERE 的全表更新",
+            "suggestion": "建议加 where id=?",
+        }
+        with patch(
+            "common.utils.openai.check_openai_config", return_value=True
+        ), patch(
+            "common.utils.openai.OpenaiClient", return_value=mock_client
+        ), patch(
+            "sql.engines.mysql.extract_tables", return_value=[{"name": "t"}]
+        ), patch.object(
+            engine, "_collect_ai_context", return_value=("(ddl)", "(rows)")
+        ):
+            engine._ai_review_check(rs, "test")
+        self.assertEqual(rs.rows[0].ai_risk_level, "high")
+        self.assertEqual(rs.rows[0].ai_risk_score, 88)
+        self.assertEqual(rs.rows[0].ai_summary, "无 WHERE 的全表更新")

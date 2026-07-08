@@ -7,7 +7,9 @@ import { ElMessage } from "element-plus";
  */
 
 function checkStatus<T extends { status?: number; msg?: string }>(env: T): T {
-  if (env.status !== 0) {
+  // 成功响应可能是旧信封 {status:0,...}，也可能是 {total,rows} 等无 status 的结构。
+  // 仅当显式带 status 且非 0 时才判为业务错误；无 status 字段直接放行。
+  if (env.status !== undefined && env.status !== 0) {
     ElMessage.error(env.msg || "操作失败");
     throw new Error(env.msg || "operation failed");
   }
