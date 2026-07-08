@@ -264,22 +264,38 @@ class AccountGrantView(APIView):
                 return privs
 
             def _getlist(key):
-                val = request.data.getlist(key)
-                if val and val[0]:
-                    return val
+                # request.data 可能是 QueryDict（form 表单）或普通 dict（JSON）：
+                # form 用 getlist 取重复键（db_name[]=a&db_name[]=b）；
+                # JSON 下 get 到的值可能是 list 或 JSON 字符串。两者都要兼容，
+                # 否则 JSON 请求时 dict 无 getlist 直接 AttributeError。
+                data = request.data
+                if hasattr(data, "getlist"):
+                    val = data.getlist(key)
+                    if val and val[0]:
+                        return val
                 key2 = key.rstrip("[]")
-                raw = request.data.get(key) or request.data.get(key2, "")
-                if raw:
+                raw = data.get(key)
+                if raw is None or raw == "":
+                    raw = data.get(key2)
+                if raw is None or raw == "":
+                    return []
+                if isinstance(raw, list):
+                    return [v for v in raw if v]
+                if isinstance(raw, str):
                     try:
-                        parsed = _json.loads(raw) if isinstance(raw, str) else raw
+                        parsed = _json.loads(raw)
                         if isinstance(parsed, list):
-                            return parsed
+                            return [str(v) for v in parsed if v]
                     except (_json.JSONDecodeError, TypeError):
-                        return [raw]
-                return []
+                        pass
+                    return [raw]
+                return [str(raw)]
 
             def _get(key):
                 val = request.data.get(key, "")
+                # JSON 请求下值可能是 list（如 db_name: ["a"]），取首个
+                if isinstance(val, list):
+                    return val[0] if val else ""
                 if isinstance(val, str) and val.startswith("["):
                     try:
                         parsed = _json.loads(val)
