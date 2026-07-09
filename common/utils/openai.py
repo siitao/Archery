@@ -1,9 +1,27 @@
-from openai import OpenAI
+import json
 import logging
+import re
+
+from openai import OpenAI
 from common.config import SysConfig
 from django.template import Context, Template
 
 logger = logging.getLogger("default")
+
+
+# AI 审核：风险等级常量
+AI_RISK_LOW = "low"
+AI_RISK_MEDIUM = "medium"
+AI_RISK_HIGH = "high"
+AI_RISK_UNKNOWN = "unknown"
+
+# AI 审核默认占位（容错时返回，避免中断检测流程）
+AI_REVIEW_FALLBACK = {
+    "risk_level": AI_RISK_UNKNOWN,
+    "risk_score": 0,
+    "summary": "AI 审核跳过",
+    "suggestion": "",
+}
 
 
 class OpenaiClient:
@@ -86,6 +104,147 @@ class OpenaiClient:
             return res.choices[0].message.content
         except Exception as e:
             raise ValueError(f"请求openai优化SQL失败: {e}")
+
+    def review_sql_by_openai(
+        self,
+        db_type: str,
+        db_name: str,
+        sql_text: str,
+        table_schemas: str,
+        table_rows: str,
+    ):
+        """对单条 SQL 做风险审核，返回结构化结果。
+
+        输出 JSON：
+            {
+                "risk_level": "low" | "medium" | "high",
+                "risk_score": int (0-100),
+                "summary": str,      # 一句话总结，供表格内展示
+                "suggestion": str    # 详细建议（markdown，含 SQL 对比）
+            }
+
+        纯参考、不阻断：任何异常都返回 AI_REVIEW_FALLBACK（risk_level=unknown），
+        绝不抛异常中断外层检测流程。
+        """
+        prompt = (
+            f"你是一位资深的 {db_type} DBA 和 SQL 审核专家。请对下面这条待上线的 SQL 进行风险审核。\n"
+            "审核维度：\n"
+            "1. 语法与规范：关键字大小写、表别名、SELECT *、缺显式字段等；\n"
+            "2. 性能风险：是否有全表扫描、缺索引、LIKE 前缀通配、隐式类型转换、OR 条件、临时表/文件排序等；\n"
+            "3. 数据量与锁：结合提供的表行数，判断 DDL 是否会长时间锁表（大表加索引/改字段）、"
+            "DML 是否会扫描过多行、是否建议走 gh-ost/pt-online-schema-change 在线变更；\n"
+            "4. 安全风险：是否为危险操作（无 WHERE 的 UPDATE/DELETE、TRUNCATE、DROP）。\n\n"
+            "评分标准（0-100，越高风险越大）：\n"
+            "- 0-39：low（低风险，可放心执行）\n"
+            "- 40-70：medium（中风险，需关注，建议在低峰执行或加限流）\n"
+            "- 71-100：high（高风险，强烈建议改写、分批或走在线变更）\n\n"
+            "请严格按如下 JSON 格式输出（仅输出 JSON，不要任何额外文字、不要 markdown 代码块）：\n"
+            '{"risk_level": "low|medium|high", '
+            '"risk_score": 整数, '
+            '"summary": "一句话总结（≤40字，中文）", '
+            '"suggestion": "详细建议（markdown，包含问题清单和修改前后的 SQL 对比）"}\n\n'
+            f"数据库：{db_name}\n"
+            f"相关表行数：\n{table_rows}\n\n"
+            f"相关表结构：\n{table_schemas}\n\n"
+            f"待审核 SQL：\n{sql_text}"
+        )
+        messages = [dict(role="user", content=prompt)]
+        try:
+            res = self.request_chat_completion(messages)
+            content = res.choices[0].message.content
+            return self._parse_review_json(content)
+        except Exception as e:
+            logger.warning(f"AI 审核 SQL 失败，降级返回 unknown: {e}")
+            return dict(AI_REVIEW_FALLBACK)
+
+    @staticmethod
+    def _parse_review_json(content: str):
+        """解析 AI 返回的审核结果。
+
+        兼容 LLM 常见的不规范输出：
+        1. markdown 代码块包裹（```json ... ```）；
+        2. JSON 前后有解释性文字（抽取首个 {...}）；
+        3. 字符串值内含裸露换行符（违反 JSON 规范，需转义为 \\n）——这是 LLM
+           在 JSON 里写多行 markdown 时的典型行为，最易导致解析失败。
+        """
+        if not content:
+            return dict(AI_REVIEW_FALLBACK)
+        text = content.strip()
+
+        data = OpenaiClient._try_load_json(text)
+        if data is None:
+            # 去掉代码块包裹后重试
+            stripped = text
+            if stripped.startswith("```"):
+                stripped = re.sub(r"^```(?:json)?\s*", "", stripped)
+                stripped = re.sub(r"\s*```$", "", stripped)
+            data = OpenaiClient._try_load_json(stripped)
+        if data is None:
+            # 抽取首个 {...} 片段（DOTALL 跨行），再做换行容错
+            match = re.search(r"\{.*\}", text, re.DOTALL)
+            if match:
+                data = OpenaiClient._try_load_json(match.group(0))
+        if data is None:
+            logger.warning(f"AI 审核结果解析失败，原始内容: {content[:200]}")
+            return dict(AI_REVIEW_FALLBACK)
+
+        # 字段校验与归一
+        level = str(data.get("risk_level", "")).lower()
+        if level not in (AI_RISK_LOW, AI_RISK_MEDIUM, AI_RISK_HIGH):
+            level = AI_RISK_UNKNOWN
+        try:
+            score = int(data.get("risk_score", 0))
+            score = max(0, min(100, score))
+        except (TypeError, ValueError):
+            score = 0
+        return {
+            "risk_level": level,
+            "risk_score": score,
+            "summary": str(data.get("summary", ""))[:200] or "AI 审核完成",
+            "suggestion": str(data.get("suggestion", "")),
+        }
+
+    @staticmethod
+    def _try_load_json(text: str):
+        """尝试解析 JSON。失败时把字符串值内的裸露换行符转义后重试。
+
+        返回解析后的 dict，或 None（解析失败）。
+        """
+        try:
+            return json.loads(text)
+        except json.JSONDecodeError:
+            pass
+        # 把 JSON 字符串值内部的裸露换行符 / 制表符转义。
+        # 仅作用于 "..." 之内，避免破坏 JSON 结构本身。
+        # 思路：逐字符扫描，跟踪是否在字符串内部。
+        escaped = []
+        in_str = False
+        escape = False
+        for ch in text:
+            if escape:
+                escaped.append(ch)
+                escape = False
+                continue
+            if ch == "\\":
+                escaped.append(ch)
+                escape = True
+                continue
+            if ch == '"':
+                in_str = not in_str
+                escaped.append(ch)
+                continue
+            if in_str and ch == "\n":
+                escaped.append("\\n")
+            elif in_str and ch == "\r":
+                escaped.append("\\r")
+            elif in_str and ch == "\t":
+                escaped.append("\\t")
+            else:
+                escaped.append(ch)
+        try:
+            return json.loads("".join(escaped))
+        except json.JSONDecodeError:
+            return None
 
 
 def check_openai_config():

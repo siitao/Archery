@@ -119,6 +119,36 @@ function parseRows(jsonStr?: string): ReviewRow[] {
   }
 }
 
+/** AI 汇总风险等级 → el-tag type */
+function aiSummaryTagType(
+  level?: string
+): "danger" | "warning" | "success" | "info" {
+  switch (level) {
+    case "high":
+      return "danger";
+    case "medium":
+      return "warning";
+    case "low":
+      return "success";
+    default:
+      return "info";
+  }
+}
+
+/** AI 汇总风险等级 → 中文文案 */
+function aiSummaryText(level?: string): string {
+  switch (level) {
+    case "high":
+      return "高风险";
+    case "medium":
+      return "中风险";
+    case "low":
+      return "低风险";
+    default:
+      return "未知";
+  }
+}
+
 const isFinished = computed(
   () =>
     !!detail.value &&
@@ -487,6 +517,33 @@ onUnmounted(() => {
         </el-descriptions>
       </el-card>
 
+      <!-- AI 风险评估（仅当工单存在 AI 审核数据时显示） -->
+      <el-card
+        v-if="detail.ai_max_risk_level"
+        shadow="never"
+        :class="['ai-risk-card', `ai-risk-${detail.ai_max_risk_level}`]"
+        body-style="padding: 12px 16px"
+      >
+        <div class="ai-risk-summary">
+          <el-tag
+            :type="aiSummaryTagType(detail.ai_max_risk_level)"
+            size="large"
+            effect="dark"
+          >
+            AI 风险评估：{{ aiSummaryText(detail.ai_max_risk_level) }}
+            <template v-if="detail.ai_max_risk_score">
+              · {{ detail.ai_max_risk_score }}/100
+            </template>
+          </el-tag>
+          <span v-if="detail.ai_high_risk_count" class="ai-high-count">
+            其中含 {{ detail.ai_high_risk_count }} 条高风险 SQL，请重点关注
+          </span>
+          <span v-else class="ai-hint">
+            此评分由 AI 结合表结构与数据量给出，仅作参考，最终决策由审核人判断
+          </span>
+        </div>
+      </el-card>
+
       <!-- Tabs：工单详情 + 操作日志 -->
       <el-card shadow="never">
         <el-tabs v-model="activeTab" @tab-change="onTabChange">
@@ -700,5 +757,36 @@ onUnmounted(() => {
     flex-wrap: wrap;
     gap: 8px;
   }
+}
+
+/* AI 风险评估卡片 */
+.ai-risk-card {
+  border-left: 4px solid var(--el-color-info);
+}
+.ai-risk-card.ai-risk-high {
+  border-left-color: var(--el-color-danger);
+  background: var(--el-color-danger-light-9);
+}
+.ai-risk-card.ai-risk-medium {
+  border-left-color: var(--el-color-warning);
+  background: var(--el-color-warning-light-9);
+}
+.ai-risk-card.ai-risk-low {
+  border-left-color: var(--el-color-success);
+}
+.ai-risk-summary {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.ai-high-count {
+  color: var(--el-color-danger);
+  font-size: 13px;
+  font-weight: 500;
+}
+.ai-hint {
+  color: var(--el-text-color-secondary);
+  font-size: 13px;
 }
 </style>

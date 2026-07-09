@@ -111,6 +111,11 @@ export interface ReviewRow {
   execute_time?: number;
   backup_time?: number;
   stagestatus?: string;
+  /** AI 审核结果（可选，仅开启 AI SQL 审核且调用成功时存在） */
+  ai_risk_level?: "low" | "medium" | "high" | "unknown" | "";
+  ai_risk_score?: number; // 0-100
+  ai_summary?: string; // 一句话总结（表格内展示）
+  ai_suggestion?: string; // 详细建议（markdown）
   [key: string]: unknown;
 }
 
@@ -126,6 +131,10 @@ export interface SqlWorkflowDetail extends SqlWorkflowRow {
   is_can_rollback: boolean;
   manual: boolean;
   run_date: string;
+  /** AI 风险评估汇总（无 AI 数据时 ai_max_risk_level 为空串） */
+  ai_max_risk_level?: "low" | "medium" | "high" | "";
+  ai_max_risk_score?: number;
+  ai_high_risk_count?: number;
 }
 
 /** 工单详情（含审批流 + 操作权限标志） */

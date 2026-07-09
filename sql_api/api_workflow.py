@@ -561,6 +561,8 @@ class WorkflowDetail(views.APIView):
                 run_date = job.next_run
 
         manual = bool(SysConfig().get("manual"))
+        # AI 风险评估汇总（解析 review_content，取最高风险分）
+        ai_summary = self._calc_ai_risk_summary(workflow_content.review_content)
         data.update(
             {
                 "review_info": review_info,
@@ -573,9 +575,73 @@ class WorkflowDetail(views.APIView):
                 "is_can_rollback": is_can_rollback,
                 "manual": manual,
                 "run_date": run_date,
+                "ai_max_risk_level": ai_summary["ai_max_risk_level"],
+                "ai_max_risk_score": ai_summary["ai_max_risk_score"],
+                "ai_high_risk_count": ai_summary["ai_high_risk_count"],
             }
         )
         return Response(data)
+
+    @staticmethod
+    def _calc_ai_risk_summary(review_content):
+        """解析工单 review_content，汇总 AI 风险评分。
+
+        review_content 是 ReviewSet.json() 的结果（JSON 字符串或已 dict 化）。
+        返回 {ai_max_risk_level, ai_max_risk_score, ai_high_risk_count}。
+        解析失败或无 AI 数据时返回占位值，前端据此隐藏汇总卡片。
+        """
+        import json
+
+        fallback = {
+            "ai_max_risk_level": "",
+            "ai_max_risk_score": 0,
+            "ai_high_risk_count": 0,
+        }
+        if not review_content:
+            return fallback
+        try:
+            rows = (
+                review_content
+                if isinstance(review_content, list)
+                else json.loads(review_content)
+            )
+        except (ValueError, TypeError):
+            return fallback
+
+        max_score = -1
+        max_level = ""
+        high_count = 0
+        has_ai = False
+        for r in rows:
+            if not isinstance(r, dict):
+                continue
+            level = r.get("ai_risk_level")
+            score = r.get("ai_risk_score")
+            if level is None and score is None:
+                continue
+            has_ai = True
+            try:
+                score = int(score) if score is not None else 0
+            except (TypeError, ValueError):
+                score = 0
+            if score > max_score:
+                max_score = score
+                max_level = level or ""
+            if level == "high":
+                high_count += 1
+
+        if not has_ai:
+            return fallback
+        # max_level 兜底（按 score 推断）
+        if not max_level:
+            max_level = (
+                "high" if max_score > 70 else "medium" if max_score >= 40 else "low"
+            )
+        return {
+            "ai_max_risk_level": max_level,
+            "ai_max_risk_score": max(0, max_score),
+            "ai_high_risk_count": high_count,
+        }
 
 
 class TimingTask(views.APIView):

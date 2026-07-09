@@ -23,6 +23,45 @@ const pagedRows = computed(() => {
   return props.rows.slice(start, start + pageSize.value);
 });
 
+/** 该行是否携带 AI 审核数据（用于决定「AI 建议」列显示标签还是占位） */
+function hasAi(row: ReviewRow): boolean {
+  return (
+    row.ai_risk_level !== undefined &&
+    row.ai_risk_level !== null &&
+    row.ai_risk_level !== ""
+  );
+}
+
+/** AI 风险等级 → el-tag type */
+function aiTagType(
+  level: ReviewRow["ai_risk_level"]
+): "danger" | "warning" | "success" | "info" {
+  switch (level) {
+    case "high":
+      return "danger";
+    case "medium":
+      return "warning";
+    case "low":
+      return "success";
+    default:
+      return "info";
+  }
+}
+
+/** AI 风险等级 → 中文文案 */
+function aiLevelText(level: ReviewRow["ai_risk_level"]): string {
+  switch (level) {
+    case "high":
+      return "高风险";
+    case "medium":
+      return "中风险";
+    case "low":
+      return "低风险";
+    default:
+      return "AI跳过";
+  }
+}
+
 /** 按 errlevel 行变色：2 错误红 / 1 警告黄 */
 function rowClass({ row }: { row: ReviewRow }): string {
   const lvl = Number((row as ReviewRow).errlevel ?? 0);
@@ -64,6 +103,38 @@ function levelText(lvl: unknown): string {
     </el-table-column>
     <el-table-column label="影响行数" width="100">
       <template #default="{ row }">{{ (row as ReviewRow).affected_rows }}</template>
+    </el-table-column>
+    <el-table-column label="AI 建议" min-width="200">
+      <template #default="{ row }">
+        <div class="ai-cell">
+          <el-tag
+            v-if="hasAi(row as ReviewRow)"
+            :type="aiTagType((row as ReviewRow).ai_risk_level)"
+            size="small"
+            class="ai-tag"
+          >
+            {{ aiLevelText((row as ReviewRow).ai_risk_level) }}
+            <template v-if="(row as ReviewRow).ai_risk_score">
+              · {{ (row as ReviewRow).ai_risk_score }}
+            </template>
+          </el-tag>
+          <span
+            v-if="(row as ReviewRow).ai_summary"
+            class="ai-summary"
+          >{{ (row as ReviewRow).ai_summary }}</span>
+          <el-popover
+            v-if="(row as ReviewRow).ai_suggestion"
+            trigger="click"
+            placement="left"
+            :width="420"
+          >
+            <template #reference>
+              <el-button link type="primary" size="small">详情</el-button>
+            </template>
+            <div class="ai-suggestion" v-html="(row as ReviewRow).ai_suggestion"></div>
+          </el-popover>
+        </div>
+      </template>
     </el-table-column>
     <template v-if="phase === 'execute'">
       <el-table-column label="执行耗时" width="100">
@@ -119,5 +190,34 @@ function levelText(lvl: unknown): string {
 
 :deep(.row-warning) {
   background: #fdf6ec !important;
+}
+
+.ai-cell {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.ai-tag {
+  flex-shrink: 0;
+}
+
+.ai-summary {
+  color: var(--el-text-color-regular);
+  font-size: 13px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 200px;
+}
+
+.ai-suggestion {
+  max-height: 400px;
+  overflow-y: auto;
+  font-size: 13px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  word-break: break-word;
 }
 </style>
