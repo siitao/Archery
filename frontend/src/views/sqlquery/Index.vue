@@ -183,6 +183,8 @@ async function onAiGenerate() {
   if (!aiDesc.value.trim()) return ElMessage.warning("请输入查询描述");
   if (!form.instance_name || !form.db_name)
     return ElMessage.warning("请先选择实例和库");
+  if (!form.table_name)
+    return ElMessage.warning("AI 生成 SQL 需要先选择表，以获取表结构上下文");
   aiLoading.value = true;
   try {
     const sql = await generateSql({

@@ -382,6 +382,40 @@ class My2sqlView(APIView):
 
 # ========== 查询 / AI ==========
 
+
+def _pg_rows_to_ddl(tb_name: str, rows: list) -> str:
+    """把 pgsql information_schema.columns 的查询结果转成 CREATE TABLE DDL 格式。
+
+    输入 rows 每行: (column_name, data_type, char_max_len, num_precision,
+                     num_scale, is_nullable, column_default, description)
+    输出: LLM 可直接理解的建表语句风格文本。
+    """
+    cols = []
+    for row in rows:
+        col_name, data_type = row[0], row[1]
+        char_max_len = row[2]
+        # numeric_precision = row[3]
+        # numeric_scale = row[4]
+        is_nullable = row[5]
+        col_default = row[6]
+        description = row[7]
+
+        # 拼类型：varchar(255) / decimal(10,2) / text / integer ...
+        type_str = data_type or "text"
+        if char_max_len and type_str in ("character varying", "varchar", "char"):
+            type_str = f"{type_str}({char_max_len})"
+
+        parts = [col_name, type_str]
+        if is_nullable == "NO":
+            parts.append("NOT NULL")
+        if col_default:
+            parts.append(f"DEFAULT {col_default}")
+        if description:
+            parts.append(f"-- {description}")
+        cols.append("    " + " ".join(parts))
+    return f"CREATE TABLE {tb_name} (\n" + ",\n".join(cols) + "\n);"
+
+
 class GenerateSqlView(APIView):
     """AI 生成 SQL：调用 OpenAI，结合所选表的 DDL 作为上下文生成查询语句。
 
@@ -407,7 +441,11 @@ class GenerateSqlView(APIView):
 
         # table_schema：尽量从库中取真实 DDL，取不到则退化为表名
         table_schema = ""
+        sample_data = ""
         if instance_name and db_name and tb_name:
+            # pgsql 默认 schema 为 public（避免 WHERE schema = NULL 永远匹配不到）
+            if db_type == "pgsql" and not schema_name:
+                schema_name = "public"
             try:
                 instance = resolve_instance(
                     request.user, instance_name=instance_name, db_type=db_type or None
@@ -417,9 +455,15 @@ class GenerateSqlView(APIView):
                     db_name, tb_name, schema_name=schema_name or None
                 )
                 rows = getattr(rs, "rows", None) or []
-                table_schema = "\n".join(
-                    " | ".join(str(c) for c in row) for row in rows
-                )
+                if rows:
+                    if db_type == "pgsql":
+                        # pgsql 返回 information_schema 元组，转成 LLM 能理解的 DDL 格式
+                        table_schema = _pg_rows_to_ddl(tb_name, rows)
+                    else:
+                        # mysql 等 SHOW CREATE TABLE 直接返回 DDL
+                        table_schema = "\n".join(
+                            " | ".join(str(c) for c in row) for row in rows
+                        )
             except Instance.DoesNotExist:
                 return JsonResponse(
                     {"status": 1, "msg": "实例不存在或你所在组未关联", "data": ""}
@@ -427,6 +471,23 @@ class GenerateSqlView(APIView):
             except Exception as e:
                 logger.warning("generate_sql 取表结构失败: %s", e)
                 table_schema = tb_name
+
+            # 取样本数据（LIMIT 5，不排序不聚合，大表也无压力）
+            if table_schema:
+                try:
+                    sample_sql = f"SELECT * FROM \"{tb_name}\" LIMIT 5" if db_type == "pgsql" else f"SELECT * FROM `{tb_name}` LIMIT 5"
+                    sample_rs = engine.query(
+                        db_name=db_name, sql=sample_sql,
+                        **({"schema_name": schema_name} if schema_name else {})
+                    )
+                    sample_rows = getattr(sample_rs, "rows", None) or []
+                    sample_cols = getattr(sample_rs, "column_list", None) or []
+                    if sample_rows:
+                        header = " | ".join(str(c) for c in sample_cols)
+                        lines = [" | ".join(str(c) for c in row) for row in sample_rows]
+                        sample_data = header + "\n" + "\n".join(lines)
+                except Exception as e:
+                    logger.info("generate_sql 取样本数据失败（不影响生成）: %s", e)
         elif tb_name:
             table_schema = tb_name
 
@@ -435,7 +496,7 @@ class GenerateSqlView(APIView):
 
             client = OpenaiClient()
             sql = client.generate_sql_by_openai(
-                db_type=db_type, table_schema=table_schema, user_input=query_desc
+                db_type=db_type, table_schema=table_schema, user_input=query_desc, sample_data=sample_data
             )
             return JsonResponse({"status": 0, "msg": "ok", "data": sql or ""})
         except ValueError as e:
