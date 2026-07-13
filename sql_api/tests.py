@@ -1240,6 +1240,80 @@ class AiReviewParserTest(TestCase):
             )
         self.assertEqual(result["risk_level"], AI_RISK_UNKNOWN)
 
+    def test_parse_trailing_comma(self):
+        """尾部逗号容错（}, ] 前的逗号）。"""
+        from common.utils.openai import OpenaiClient
+
+        data = OpenaiClient._parse_review_json(
+            '{"risk_level": "high", "risk_score": 80,}'
+        )
+        self.assertEqual(data["risk_level"], "high")
+        self.assertEqual(data["risk_score"], 80)
+
+    def test_parse_single_quotes(self):
+        """单引号 → 双引号容错。"""
+        from common.utils.openai import OpenaiClient
+
+        data = OpenaiClient._parse_review_json(
+            "{'risk_level': 'low', 'risk_score': 30}"
+        )
+        self.assertEqual(data["risk_level"], "low")
+        self.assertEqual(data["risk_score"], 30)
+
+    def test_parse_chinese_punctuation(self):
+        """中文全角标点（，：“”）→ ASCII 容错。"""
+        from common.utils.openai import OpenaiClient
+
+        data = OpenaiClient._parse_review_json(
+            '{"risk_level"\uff1a"high"\uff0c"risk_score"\uff1a88}'
+        )
+        self.assertEqual(data["risk_level"], "high")
+        self.assertEqual(data["risk_score"], 88)
+
+    def test_parse_preserves_apostrophe_in_string(self):
+        """字符串内部的英文撇号不应被误转（it's 不会被破坏）。"""
+        from common.utils.openai import OpenaiClient
+
+        data = OpenaiClient._parse_review_json(
+            '{"risk_level": "low", "risk_score": 10, "summary": "it\'s ok"}'
+        )
+        self.assertEqual(data["risk_level"], "low")
+        self.assertIn("it", data["summary"])
+
+    def test_parse_ddl_lock_fields(self):
+        """变更影响预测字段（ddl_lock_risk/affected_rows_estimate/use_osc）解析。"""
+        from common.utils.openai import OpenaiClient
+
+        data = OpenaiClient._parse_review_json(
+            '{"risk_level": "high", "risk_score": 85, '
+            '"ddl_lock_risk": "high", "affected_rows_estimate": "约132万行", '
+            '"use_osc": true}'
+        )
+        self.assertEqual(data["ddl_lock_risk"], "high")
+        self.assertEqual(data["affected_rows_estimate"], "约132万行")
+        self.assertIs(data["use_osc"], True)
+
+    def test_parse_use_osc_string_coercion(self):
+        """use_osc 字符串 'true' 应被转为 bool True。"""
+        from common.utils.openai import OpenaiClient
+
+        data = OpenaiClient._parse_review_json(
+            '{"risk_level": "high", "risk_score": 85, '
+            '"ddl_lock_risk": "high", "use_osc": "true"}'
+        )
+        self.assertIs(data["use_osc"], True)
+
+    def test_fallback_includes_ddl_fields(self):
+        """容错降级返回应包含新增的 DDL 字段，保证字段一致性。"""
+        from common.utils.openai import OpenaiClient, AI_REVIEW_FALLBACK
+
+        # 非法输入 → fallback
+        data = OpenaiClient._parse_review_json("totally not json")
+        for key in AI_REVIEW_FALLBACK:
+            self.assertIn(key, data)
+        self.assertEqual(data["ddl_lock_risk"], "none")
+        self.assertIs(data["use_osc"], False)
+
 
 class AiRiskSummaryTest(TestCase):
     """WorkflowDetail._calc_ai_risk_summary 汇总逻辑测试。"""
@@ -1277,6 +1351,20 @@ class AiRiskSummaryTest(TestCase):
         s = self._summary(json.dumps(rows))
         self.assertEqual(s["ai_high_risk_count"], 2)
         self.assertEqual(s["ai_max_risk_score"], 95)
+
+    def test_counts_lock_high_risk(self):
+        """汇总应统计 DDL 锁表高危（ai_ddl_lock_risk=high）的条数。"""
+        rows = [
+            {"sql": "ddl1", "ai_risk_level": "high", "ai_risk_score": 85,
+             "ai_ddl_lock_risk": "high"},
+            {"sql": "ddl2", "ai_risk_level": "high", "ai_risk_score": 80,
+             "ai_ddl_lock_risk": "medium"},
+            {"sql": "dml1", "ai_risk_level": "medium", "ai_risk_score": 55,
+             "ai_ddl_lock_risk": "none"},
+        ]
+        s = self._summary(json.dumps(rows))
+        self.assertEqual(s["ai_lock_high_count"], 1)
+        self.assertEqual(s["ai_high_risk_count"], 2)
 
 
 class ExecuteCheckAiIntegrationTest(TestCase):
@@ -1342,16 +1430,19 @@ class ExecuteCheckAiIntegrationTest(TestCase):
         self.assertEqual(rs.rows[0].ai_summary, "AI 审核失败")
 
     def test_ai_success_attaches_fields(self):
-        """AI 正常返回时，row 挂上 ai_* 字段。"""
+        """AI 正常返回时，row 挂上 ai_* 字段（含变更影响预测）。"""
         engine = self._make_engine()
         engine.config.get = lambda k, d=False: True if k == "ai_review_enabled" else d
-        rs = self._make_reviewset(["update t set a=1"])
+        rs = self._make_reviewset(["alter table t add index idx_a(a)"])
         mock_client = MagicMock()
         mock_client.review_sql_by_openai.return_value = {
             "risk_level": "high",
             "risk_score": 88,
-            "summary": "无 WHERE 的全表更新",
-            "suggestion": "建议加 where id=?",
+            "summary": "大表加索引将长时间锁表",
+            "suggestion": "建议走 gh-ost",
+            "ddl_lock_risk": "high",
+            "affected_rows_estimate": "约132万行",
+            "use_osc": True,
         }
         with patch(
             "common.utils.openai.check_openai_config", return_value=True
@@ -1365,4 +1456,36 @@ class ExecuteCheckAiIntegrationTest(TestCase):
             engine._ai_review_check(rs, "test")
         self.assertEqual(rs.rows[0].ai_risk_level, "high")
         self.assertEqual(rs.rows[0].ai_risk_score, 88)
-        self.assertEqual(rs.rows[0].ai_summary, "无 WHERE 的全表更新")
+        self.assertEqual(rs.rows[0].ai_summary, "大表加索引将长时间锁表")
+        # 变更影响预测字段
+        self.assertEqual(rs.rows[0].ai_ddl_lock_risk, "high")
+        self.assertEqual(rs.rows[0].ai_affected_rows_estimate, "约132万行")
+        self.assertIs(rs.rows[0].ai_use_osc, True)
+
+    def test_ai_over_limit_marks_unknown_with_ddl_fields(self):
+        """超过审核条数上限的 row 也应挂上 DDL 默认字段，保证字段一致。"""
+        engine = self._make_engine()
+        engine.config.get = lambda k, d=False: True if k == "ai_review_enabled" else d
+        # 构造超过 AI_REVIEW_MAX_STATEMENTS(20) 的 reviewset
+        sqls = [f"update t set a={i}" for i in range(25)]
+        rs = self._make_reviewset(sqls)
+        with patch(
+            "common.utils.openai.check_openai_config", return_value=True
+        ), patch(
+            "common.utils.openai.OpenaiClient"
+        ) as mock_client_cls:
+            engine._ai_review_check(rs, "test")
+            # 第 21 条（idx=20）应跳过，不调用 AI
+            mock_client_cls.assert_called_once()
+            mock_client = mock_client_cls.return_value
+            # 前 20 条调用，第 21+ 条不调用
+            self.assertLessEqual(
+                mock_client.review_sql_by_openai.call_count, 20
+            )
+        # 第 21 条（idx=20）标记 unknown + DDL 默认字段
+        over_row = rs.rows[20]
+        from common.utils.openai import AI_RISK_UNKNOWN
+
+        self.assertEqual(over_row.ai_risk_level, AI_RISK_UNKNOWN)
+        self.assertEqual(over_row.ai_ddl_lock_risk, "none")
+        self.assertIs(over_row.ai_use_osc, False)

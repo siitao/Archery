@@ -880,8 +880,14 @@ class MysqlEngine(EngineBase):
             mask_result = resultset
         return mask_result
 
-    def execute_check(self, db_name=None, sql=""):
-        """上线单执行前的检查, 返回Review set"""
+    def execute_check(self, db_name=None, sql="", run_ai_review=True):
+        """上线单执行前的检查, 返回Review set
+
+        :param run_ai_review: 是否触发 AI 风险审核。检测接口默认 True；
+            提交工单时由调用方传 False 以避免与检测阶段重复调用 AI
+            （AI 建议对同一 SQL 幂等，二次调用纯属浪费 token 和时间）。
+            注意：Inception 规则检查始终执行，该参数仅影响 AI 建议部分。
+        """
         # 进行Inception检查，获取检测结果
         try:
             check_result = self.inc_engine.execute_check(
@@ -938,7 +944,10 @@ class MysqlEngine(EngineBase):
                     row.errormessage = "DDL语句和DML语句不能同时执行！"
 
         # AI 风险审核（纯参考，不阻断、不改 errlevel；任何异常均静默跳过）
-        self._ai_review_check(check_result, db_name)
+        # 仅在检测接口触发；提交工单时由调用方传 run_ai_review=False 跳过，
+        # 避免对同一 SQL 重复调用 AI（建议幂等，重复调用浪费 token）。
+        if run_ai_review:
+            self._ai_review_check(check_result, db_name)
         return check_result
 
     # AI 审核相关常量
@@ -953,7 +962,12 @@ class MysqlEngine(EngineBase):
         """
         if not self.config.get("ai_review_enabled", False):
             return
-        from common.utils.openai import OpenaiClient, check_openai_config, AI_RISK_UNKNOWN
+        from common.utils.openai import (
+            OpenaiClient,
+            check_openai_config,
+            AI_RISK_UNKNOWN,
+            AI_LOCK_NONE,
+        )
 
         if not check_openai_config():
             return
@@ -972,6 +986,9 @@ class MysqlEngine(EngineBase):
                 row.ai_risk_score = 0
                 row.ai_summary = "AI 审核跳过（超过审核条数上限）"
                 row.ai_suggestion = ""
+                row.ai_ddl_lock_risk = AI_LOCK_NONE
+                row.ai_affected_rows_estimate = ""
+                row.ai_use_osc = False
                 continue
             try:
                 sql_text = row.sql or ""
@@ -988,12 +1005,18 @@ class MysqlEngine(EngineBase):
                 row.ai_risk_score = result["risk_score"]
                 row.ai_summary = result["summary"]
                 row.ai_suggestion = result["suggestion"]
+                row.ai_ddl_lock_risk = result["ddl_lock_risk"]
+                row.ai_affected_rows_estimate = result["affected_rows_estimate"]
+                row.ai_use_osc = result["use_osc"]
             except Exception as e:
                 logger.warning(f"AI 审核单条 SQL 失败，降级为 unknown: {e}")
                 row.ai_risk_level = AI_RISK_UNKNOWN
                 row.ai_risk_score = 0
                 row.ai_summary = "AI 审核失败"
                 row.ai_suggestion = ""
+                row.ai_ddl_lock_risk = AI_LOCK_NONE
+                row.ai_affected_rows_estimate = ""
+                row.ai_use_osc = False
 
     def _collect_ai_context(self, db_name, tables):
         """收集 AI 审核所需的上下文：相关表的 DDL + 行数。

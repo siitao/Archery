@@ -53,12 +53,18 @@ service.interceptors.response.use(
       return Promise.reject(error);
     }
 
-    // 尝试从旧信封 {status,msg} 或 DRF {detail} 提取提示信息
+    // 尝试从旧信封 {status,msg} 或 DRF {detail}/{errors} 提取提示信息
+    // errors：DRF ValidationError({"errors": "..."})（如 SQL 检测 GoInception 报错）
     let msg = "";
     if (typeof data === "string") msg = data;
     else if (data?.msg) msg = data.msg;
     else if (data?.detail) msg = data.detail;
     else if (data?.message) msg = data.message;
+    else if (data?.errors) {
+      // errors 可能是字符串，也可能是「字段 -> 错误数组」的 DRF 校验结构
+      const errs = data.errors;
+      msg = typeof errs === "string" ? errs : JSON.stringify(errs);
+    }
     // 防御：当响应体是 HTML（Django 异常页/登录重定向页等）或超长内容时，
     // 不要把整段原文弹到页面，改用通用提示
     if (msg) {

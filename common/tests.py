@@ -47,12 +47,43 @@ class ConfigOpsTests(TestCase):
         )
         archer_config.replace(new_config)
         archer_config.get_all_config()
-        expected_config = {
-            "numconfig": "1",
-            "strconfig": "strconfig",
-            "boolconfig": False,
-        }
-        self.assertEqual(archer_config.sys_config, expected_config)
+        # 只校验本次提交的 key 被正确写入；不再断言其它 key 被清空
+        # （replace 现为按 key upsert，不再 purge 全表）
+        self.assertEqual(archer_config.sys_config["numconfig"], "1")
+        self.assertEqual(archer_config.sys_config["strconfig"], "strconfig")
+        self.assertEqual(archer_config.sys_config["boolconfig"], False)
+
+    def test_replace_does_not_wipe_other_keys(self):
+        """配置项页面与认证配置页面共用 sql_config 表，replace 不得误删其它行。
+
+        回归：历史 replace() 先 purge 全表再 bulk_create，导致配置项页面保存时
+        把 auth_provider / auth_ldap_* 等认证配置全部删光，强制重启后丢失。
+        """
+        # 1. 先写一行「认证配置」（模拟认证页面保存）
+        SysConfig().set("auth_provider", "ldap")
+        SysConfig().set("auth_ldap_server_uri", "ldap://example.test")
+
+        # 2. 配置项页面保存一组 key（不含任何认证 key）
+        archer_config = SysConfig()
+        archer_config.replace(
+            json.dumps(
+                [
+                    {"key": "go_inception_host", "value": "127.0.0.1"},
+                    {"key": "auto_review", "value": "true"},
+                ]
+            )
+        )
+
+        # 3. 认证配置行必须仍在
+        fresh = SysConfig()
+        fresh.get_all_config()
+        self.assertEqual(fresh.sys_config["auth_provider"], "ldap")
+        self.assertEqual(
+            fresh.sys_config["auth_ldap_server_uri"], "ldap://example.test"
+        )
+        # 且配置项也写入成功
+        self.assertEqual(fresh.sys_config["go_inception_host"], "127.0.0.1")
+        self.assertEqual(fresh.sys_config["auto_review"], True)
 
     def test_get_bool_transform(self):
         bool_config = json.dumps([{"key": "boolconfig2", "value": "false"}])

@@ -62,6 +62,30 @@ function aiLevelText(level: ReviewRow["ai_risk_level"]): string {
   }
 }
 
+/** DDL 锁表风险是否需要重点提示（medium/high 才显示标签） */
+function hasLockRisk(row: ReviewRow): boolean {
+  return row.ai_ddl_lock_risk === "medium" || row.ai_ddl_lock_risk === "high";
+}
+
+/** DDL 锁表风险 → el-tag type */
+function lockTagType(
+  level: ReviewRow["ai_ddl_lock_risk"]
+): "danger" | "warning" | "info" {
+  return level === "high" ? "danger" : "warning";
+}
+
+/** DDL 锁表风险 → 中文文案 */
+function lockText(level: ReviewRow["ai_ddl_lock_risk"]): string {
+  switch (level) {
+    case "high":
+      return "大表锁表";
+    case "medium":
+      return "锁表风险";
+    default:
+      return "";
+  }
+}
+
 /** 按 errlevel 行变色：2 错误红 / 1 警告黄 */
 function rowClass({ row }: { row: ReviewRow }): string {
   const lvl = Number((row as ReviewRow).errlevel ?? 0);
@@ -118,6 +142,28 @@ function levelText(lvl: unknown): string {
               · {{ (row as ReviewRow).ai_risk_score }}
             </template>
           </el-tag>
+          <el-tag
+            v-if="hasLockRisk(row as ReviewRow)"
+            :type="lockTagType((row as ReviewRow).ai_ddl_lock_risk)"
+            size="small"
+            effect="plain"
+            class="ai-tag"
+          >
+            {{ lockText((row as ReviewRow).ai_ddl_lock_risk) }}
+          </el-tag>
+          <el-tag
+            v-if="(row as ReviewRow).ai_use_osc"
+            type="warning"
+            size="small"
+            effect="dark"
+            class="ai-tag"
+          >
+            建议走 OSC
+          </el-tag>
+          <span
+            v-if="(row as ReviewRow).ai_affected_rows_estimate"
+            class="ai-affected"
+          >影响：{{ (row as ReviewRow).ai_affected_rows_estimate }}</span>
           <span
             v-if="(row as ReviewRow).ai_summary"
             class="ai-summary"
@@ -210,6 +256,12 @@ function levelText(lvl: unknown): string {
   overflow: hidden;
   text-overflow: ellipsis;
   max-width: 200px;
+}
+
+.ai-affected {
+  color: var(--el-color-warning);
+  font-size: 12px;
+  flex-shrink: 0;
 }
 
 .ai-suggestion {

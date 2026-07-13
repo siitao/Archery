@@ -538,7 +538,13 @@ onUnmounted(() => {
           <span v-if="detail.ai_high_risk_count" class="ai-high-count">
             其中含 {{ detail.ai_high_risk_count }} 条高风险 SQL，请重点关注
           </span>
-          <span v-else class="ai-hint">
+          <span v-if="detail.ai_lock_high_count" class="ai-lock-count">
+            含 {{ detail.ai_lock_high_count }} 条大表 DDL 锁表风险，强烈建议走 gh-ost/pt-osc 在线变更
+          </span>
+          <span
+            v-if="!detail.ai_high_risk_count && !detail.ai_lock_high_count"
+            class="ai-hint"
+          >
             此评分由 AI 结合表结构与数据量给出，仅作参考，最终决策由审核人判断
           </span>
         </div>
@@ -781,6 +787,12 @@ onUnmounted(() => {
   flex-wrap: wrap;
 }
 .ai-high-count {
+  color: var(--el-color-danger);
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.ai-lock-count {
   color: var(--el-color-danger);
   font-size: 13px;
   font-weight: 500;

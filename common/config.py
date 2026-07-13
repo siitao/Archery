@@ -70,19 +70,33 @@ class SysConfig(object):
         self.sys_config.update({key: value})
 
     def replace(self, configs):
+        """批量保存配置项（仅覆盖本次提交的 key，保留其它行）。
+
+        历史实现是「先 purge 全表再 bulk_create」，但配置项页面与认证配置页面
+        共用 sql_config 表，purge 会误删认证配置（auth_provider / auth_ldap_* /
+        oidc_* / cas_* 等），表现为强制重启后配置项与认证配置全部丢失。
+        现改为仅覆盖本次提交的 key，保留其它行。
+
+        性能：「按 key 批量删除 + bulk_create」共两条 SQL，避免逐条
+        update_or_create 带来的 ~2N 次 DB 往返。
+        注：未用 bulk_create(update_conflicts=True)，因为 Config.item 的唯一性
+        建在字段 unique=True 上，MySQL 后端不支持把它作为 unique_fields 触发 upsert。
+        """
         result = {"status": 0, "msg": "ok", "data": []}
-        # 清空并替换
         try:
+            items_list = json.loads(configs)
+            objs = [
+                Config(item=items["key"].strip(), value=str(items["value"]).strip())
+                for items in items_list
+            ]
+            keys = [obj.item for obj in objs]
             with transaction.atomic():
-                self.purge()
-                Config.objects.bulk_create(
-                    [
-                        Config(
-                            item=items["key"].strip(), value=str(items["value"]).strip()
-                        )
-                        for items in json.loads(configs)
-                    ]
-                )
+                # 仅删除本次提交的 key，保留认证配置等其它行
+                Config.objects.filter(item__in=keys).delete()
+                Config.objects.bulk_create(objs)
+            # 更新内存缓存
+            for obj in objs:
+                self.sys_config[obj.item] = self.filter_bool(obj.value)
         except Exception as e:
             logger.error(traceback.format_exc())
             result["status"] = 1

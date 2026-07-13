@@ -501,10 +501,17 @@ class WorkflowContentSerializer(serializers.ModelSerializer):
                 check_result = sql_export.pre_count_check(workflow=instance)
             else:
                 check_result = check_engine.execute_check(
-                    db_name=workflow_data["db_name"], sql=sql_content
+                    db_name=workflow_data["db_name"],
+                    sql=sql_content,
+                    run_ai_review=False,
                 )
         except Exception as e:
             raise serializers.ValidationError({"errors": str(e)})
+
+        # 合并检测阶段的 AI 审核结果（提交时不重复调用 AI，直接复用前端回传的检测结果）。
+        # 按 SQL 文本匹配，把 ai_* 字段挂到本次重算的 check_result.rows 上，
+        # 保证详情页的 AI 建议不丢失，同时不重复消耗 AI token。
+        self._merge_ai_review_fields(check_result)
 
         # 未开启备份选项，并且engine支持备份，强制设置备份
         is_backup = (
@@ -548,6 +555,57 @@ class WorkflowContentSerializer(serializers.ModelSerializer):
             auditor.workflow.status = "workflow_review_pass"
         auditor.workflow.save()
         return workflow_content
+
+    def _merge_ai_review_fields(self, check_result):
+        """把检测阶段的 AI 审核结果合并到提交时重算的 check_result 上。
+
+        提交工单时会重跑 Inception 防绕过（得到权威的 errlevel/errormessage），
+        但跳过 AI 调用（避免与检测阶段重复）。这里从前端回传的
+        `ai_review_content`（检测接口返回的 rows）中提取 AI 字段，按 SQL 文本
+        匹配挂到本次 check_result.rows 上。任何异常均静默跳过，不影响提交。
+        """
+        import json
+
+        ai_rows = self.context["request"].data.get("ai_review_content")
+        if not ai_rows:
+            return
+        if isinstance(ai_rows, str):
+            try:
+                ai_rows = json.loads(ai_rows)
+            except (ValueError, TypeError):
+                return
+        if not isinstance(ai_rows, list) or not ai_rows:
+            return
+
+        # 构建 sql → ai 字段 映射（以检测阶段为准）
+        ai_fields = (
+            "ai_risk_level",
+            "ai_risk_score",
+            "ai_summary",
+            "ai_suggestion",
+            "ai_ddl_lock_risk",
+            "ai_affected_rows_estimate",
+            "ai_use_osc",
+        )
+        sql_to_ai = {}
+        for r in ai_rows:
+            if not isinstance(r, dict):
+                continue
+            sql = (r.get("sql") or "").strip()
+            if sql:
+                sql_to_ai[sql] = {k: r.get(k) for k in ai_fields if k in r}
+
+        if not sql_to_ai:
+            return
+
+        # 按 sql 匹配挂到本次 check_result.rows
+        for row in check_result.rows:
+            if isinstance(row, dict):
+                continue
+            sql = (getattr(row, "sql", "") or "").strip()
+            if sql in sql_to_ai:
+                for k, v in sql_to_ai[sql].items():
+                    setattr(row, k, v)
 
     class Meta:
         model = SqlWorkflowContent

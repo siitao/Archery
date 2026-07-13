@@ -41,6 +41,7 @@ const checkWarning = ref(0);
 const checkError = ref(0);
 const checked = ref(false);
 const submitting = ref(false);
+const checking = ref(false);
 
 async function loadGroups() {
   try {
@@ -108,6 +109,10 @@ async function onCheck() {
   if (!form.instance) return ElMessage.warning("请选择实例");
   if (!form.db_name.trim()) return ElMessage.warning("请输入数据库名");
   if (!sqlContent.value.trim()) return ElMessage.warning("请输入 SQL");
+  checking.value = true;
+  // 检测期间清除上次结果，避免「旧结果 + 转圈」并存
+  checked.value = false;
+  checkRows.value = [];
   try {
     const { data } = await sqlCheck({
       instance_id: form.instance,
@@ -124,7 +129,11 @@ async function onCheck() {
       ElMessage.success("检测完成");
     }
   } catch {
-    // 拦截器已提示
+    // 后端 execute_check 异常以 DRF ValidationError({"errors": "..."}) 返回（HTTP 400），
+    // 请求拦截器已弹出 ElMessage 提示，这里只需标记检测未通过、保持提交按钮锁定。
+    checked.value = false;
+  } finally {
+    checking.value = false;
   }
 }
 
@@ -171,6 +180,8 @@ async function onSubmit() {
         is_offline_export: 0,
       },
       sql_content: sqlContent.value,
+      // 回传检测阶段的含 AI 字段的结果，提交时复用，避免重复调用 AI
+      ai_review_content: checkRows.value,
     });
     ElMessage.success("提交成功");
     router.replace({
@@ -286,10 +297,12 @@ onMounted(() => {
           <SqlEditor v-model="sqlContent" />
         </el-form-item>
         <el-form-item>
-          <el-button type="primary" @click="onCheck">SQL 检测</el-button>
+          <el-button type="primary" :loading="checking" @click="onCheck">
+            {{ checking ? "检测中..." : "SQL 检测" }}
+          </el-button>
           <el-button
             type="success"
-            :disabled="!checked"
+            :disabled="!checked || checking"
             :loading="submitting"
             @click="onSubmit"
           >

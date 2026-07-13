@@ -578,6 +578,7 @@ class WorkflowDetail(views.APIView):
                 "ai_max_risk_level": ai_summary["ai_max_risk_level"],
                 "ai_max_risk_score": ai_summary["ai_max_risk_score"],
                 "ai_high_risk_count": ai_summary["ai_high_risk_count"],
+                "ai_lock_high_count": ai_summary["ai_lock_high_count"],
             }
         )
         return Response(data)
@@ -596,6 +597,7 @@ class WorkflowDetail(views.APIView):
             "ai_max_risk_level": "",
             "ai_max_risk_score": 0,
             "ai_high_risk_count": 0,
+            "ai_lock_high_count": 0,
         }
         if not review_content:
             return fallback
@@ -611,6 +613,7 @@ class WorkflowDetail(views.APIView):
         max_score = -1
         max_level = ""
         high_count = 0
+        lock_high_count = 0
         has_ai = False
         for r in rows:
             if not isinstance(r, dict):
@@ -629,6 +632,8 @@ class WorkflowDetail(views.APIView):
                 max_level = level or ""
             if level == "high":
                 high_count += 1
+            if r.get("ai_ddl_lock_risk") == "high":
+                lock_high_count += 1
 
         if not has_ai:
             return fallback
@@ -641,6 +646,7 @@ class WorkflowDetail(views.APIView):
             "ai_max_risk_level": max_level,
             "ai_max_risk_score": max(0, max_score),
             "ai_high_risk_count": high_count,
+            "ai_lock_high_count": lock_high_count,
         }
 
 

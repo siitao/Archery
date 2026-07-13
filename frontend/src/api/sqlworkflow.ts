@@ -116,6 +116,10 @@ export interface ReviewRow {
   ai_risk_score?: number; // 0-100
   ai_summary?: string; // 一句话总结（表格内展示）
   ai_suggestion?: string; // 详细建议（markdown）
+  /** 变更影响预测（DDL 锁表/影响行数/是否建议 OSC） */
+  ai_ddl_lock_risk?: "none" | "low" | "medium" | "high" | "";
+  ai_affected_rows_estimate?: string;
+  ai_use_osc?: boolean;
   [key: string]: unknown;
 }
 
@@ -135,6 +139,8 @@ export interface SqlWorkflowDetail extends SqlWorkflowRow {
   ai_max_risk_level?: "low" | "medium" | "high" | "";
   ai_max_risk_score?: number;
   ai_high_risk_count?: number;
+  /** DDL 锁表高危 SQL 数（变更影响预测） */
+  ai_lock_high_count?: number;
 }
 
 /** 工单详情（含审批流 + 操作权限标志） */
@@ -290,6 +296,8 @@ export function submitWorkflow(params: {
     export_format?: string;
   };
   sql_content: string;
+  /** 检测阶段返回的含 AI 字段的 rows，提交时回传以复用 AI 结果（避免重复调用 AI） */
+  ai_review_content?: ReviewRow[];
 }) {
   return request.post<SqlWorkflowRow>("/api/v1/workflow/", params);
 }
