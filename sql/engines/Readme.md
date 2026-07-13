@@ -47,3 +47,26 @@ AVAILABLE_ENGINES = {
     "odps": {"path": "sql.engines.odps:ODPSEngine"},
 }
 ```
+
+## PgSQL 引擎功能支持矩阵
+
+PgSQL 引擎（`sql/engines/pgsql.py`）基于 `psycopg2` 驱动，`pglast` 做 SQL 语法树审核。支持的功能如下：
+
+| 功能模块 | 支持情况 | 说明 |
+|---------|---------|------|
+| 在线查询 | ✅ | SELECT/EXPLAIN，支持 schema 选择、JSONB 转换、只读事务 |
+| SQL 工单审核 | ✅ | 基于 pglast AST：语法校验、DROP/TRUNCATE 拦截、无 WHERE 的 UPDATE/DELETE 告警、高危正则、critical_ddl_regex |
+| 工单执行 | ✅ | 逐条执行、失败回滚、异常标记 |
+| 数据字典 | ✅ | 表/视图/函数/存储过程/触发器的列表与详情（基于 pg_catalog）|
+| 诊断 | ✅ | 进程列表(pg_stat_activity)、锁等待(pg_blocking_pids)、长事务、终止会话(pg_terminate_backend)、Top 表空间(表维度 TOP N，按 pg_total_relation_size 排序) |
+| 参数管理 | ✅ | 查 pg_settings、ALTER SYSTEM SET（postmaster 类参数需重启会被拒绝）|
+| 参数对比 | ✅ | 两个 PG 实例间参数对比 |
+| 数据库对象管理 | ❌ | 账号管理（create/drop instance user）暂不支持 |
+| 回滚 SQL | ❌ | 暂不生成回滚语句 |
+| 定时任务(events) | ❌ | PG 无原生事件调度（pg_cron 扩展可后续支持）|
+
+### 审核依赖
+工单审核依赖 `pglast==6.*`（PostgreSQL 官方 libpg_query 的 Python 绑定），安装见 `requirements.txt`。pglast 包含 C 扩展，部分平台（如 Windows 无 MSVC）需预编译环境或使用官方 wheel。
+
+### schema 说明
+PG 有独立的 schema 概念（区别于 MySQL）。数据字典、对象管理方法默认查询 `public` schema，可通过 `schema_name` 参数指定其他 schema（在线查询页已支持 schema 选择器）。

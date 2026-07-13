@@ -57,6 +57,7 @@ function toRecord(row: ProcessRow): Record<string, unknown> {
 function getThreadId(row: ProcessRow): string | number | (string | number)[] | undefined {
   const r = row as Record<string, unknown>;
   if (r.id != null) return r.id as string | number; // mysql
+  if (r.pid != null) return r.pid as string | number; // pgsql
   if (r.opid != null) return r.opid as string | number; // mongo
   if (r.SID != null)
     return [r.SID as string | number, r["SERIAL#"] as string | number]; // oracle

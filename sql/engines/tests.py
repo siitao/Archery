@@ -3,6 +3,7 @@ from datetime import timedelta, datetime
 from unittest.mock import MagicMock, patch, Mock, ANY
 from pytest_mock import MockerFixture
 
+import psycopg2
 import sqlparse
 from django.contrib.auth import get_user_model
 from django.test import TestCase
@@ -621,7 +622,8 @@ class TestPgSQL(TestCase):
     def test_execute_check_critical_sql(self):
         self.sys_config.set("critical_ddl_regex", "^|update")
         self.sys_config.get_all_config()
-        sql = "update user set id=1"
+        # user 是 PG 保留字，使用普通表名 tb
+        sql = "update tb set id=1"
         row = ReviewResult(
             id=1,
             errlevel=2,
@@ -636,7 +638,7 @@ class TestPgSQL(TestCase):
 
     def test_execute_check_normal_sql(self):
         self.sys_config.purge()
-        sql = "alter table tb set id=1"
+        sql = "alter table tb add column c1 int;"
         row = ReviewResult(
             id=1,
             errlevel=0,
@@ -650,6 +652,73 @@ class TestPgSQL(TestCase):
         check_result = new_engine.execute_check(db_name="archery", sql=sql)
         self.assertIsInstance(check_result, ReviewSet)
         self.assertEqual(check_result.rows[0].__dict__, row.__dict__)
+
+    def test_execute_check_drop_table(self):
+        """DROP TABLE 应被拦截"""
+        self.sys_config.purge()
+        sql = "drop table tb1;"
+        new_engine = PgSQLEngine(instance=self.ins)
+        check_result = new_engine.execute_check(db_name="archery", sql=sql)
+        self.assertEqual(check_result.rows[0].errlevel, 2)
+        self.assertIn("DROP TABLE", check_result.rows[0].errormessage)
+
+    def test_execute_check_truncate(self):
+        """TRUNCATE 应被拦截"""
+        self.sys_config.purge()
+        sql = "truncate table tb1;"
+        new_engine = PgSQLEngine(instance=self.ins)
+        check_result = new_engine.execute_check(db_name="archery", sql=sql)
+        self.assertEqual(check_result.rows[0].errlevel, 2)
+        self.assertIn("TRUNCATE", check_result.rows[0].errormessage)
+
+    def test_execute_check_update_without_where(self):
+        """无 WHERE 的 UPDATE 应告警(errlevel=1)"""
+        self.sys_config.purge()
+        sql = "update tb set id=1;"
+        new_engine = PgSQLEngine(instance=self.ins)
+        check_result = new_engine.execute_check(db_name="archery", sql=sql)
+        self.assertEqual(check_result.rows[0].errlevel, 1)
+        self.assertIn("WHERE", check_result.rows[0].errormessage)
+
+    def test_execute_check_update_with_where(self):
+        """有 WHERE 的 UPDATE 应放行(errlevel=0)"""
+        self.sys_config.purge()
+        sql = "update tb set id=1 where id=2;"
+        new_engine = PgSQLEngine(instance=self.ins)
+        check_result = new_engine.execute_check(db_name="archery", sql=sql)
+        self.assertEqual(check_result.rows[0].errlevel, 0)
+
+    def test_execute_check_delete_without_where(self):
+        """无 WHERE 的 DELETE 应告警(errlevel=1)"""
+        self.sys_config.purge()
+        sql = "delete from tb;"
+        new_engine = PgSQLEngine(instance=self.ins)
+        check_result = new_engine.execute_check(db_name="archery", sql=sql)
+        self.assertEqual(check_result.rows[0].errlevel, 1)
+
+    def test_execute_check_syntax_error(self):
+        """语法错误的 SQL 应被拦截(errlevel=2)，而不是放行"""
+        self.sys_config.purge()
+        sql = "updaet tb set;"
+        new_engine = PgSQLEngine(instance=self.ins)
+        check_result = new_engine.execute_check(db_name="archery", sql=sql)
+        self.assertEqual(check_result.rows[0].errlevel, 2)
+        self.assertIn("语法错误", check_result.rows[0].errormessage)
+
+    def test_execute_check_syntax_type(self):
+        """DDL/DML 类型应正确识别"""
+        self.sys_config.purge()
+        # DDL
+        new_engine = PgSQLEngine(instance=self.ins)
+        check_result = new_engine.execute_check(
+            db_name="archery", sql="create table tb (id int);"
+        )
+        self.assertEqual(check_result.syntax_type, 1)
+        # DML
+        check_result = new_engine.execute_check(
+            db_name="archery", sql="insert into tb values (1);"
+        )
+        self.assertEqual(check_result.syntax_type, 2)
 
     @patch("psycopg2.connect.cursor.execute")
     @patch("psycopg2.connect.cursor")
@@ -684,20 +753,9 @@ class TestPgSQL(TestCase):
         self.assertIsInstance(execute_result, ReviewSet)
         self.assertEqual(execute_result.rows[0].__dict__.keys(), row.__dict__.keys())
 
-    @patch("psycopg2.connect.cursor.execute")
-    @patch("psycopg2.connect.cursor")
-    @patch("psycopg2.connect", return_value=RuntimeError)
-    def test_execute_workflow_exception(self, _conn, _cursor, _execute):
-        sql = "update user set id=1"
-        row = ReviewResult(
-            id=1,
-            errlevel=2,
-            stagestatus="Execute Failed",
-            errormessage=f'异常信息：{f"Oracle命令执行报错，语句：{sql}"}',
-            sql=sql,
-            affected_rows=0,
-            execute_time=0,
-        )
+    def test_execute_workflow_exception(self):
+        """执行时报错应回滚，失败语句标记 Execute Failed，后续语句标记未执行"""
+        sql = "update tb set id=1;update tb set id=2;"
         wf = SqlWorkflow.objects.create(
             workflow_name="some_name",
             group_id=1,
@@ -712,13 +770,22 @@ class TestPgSQL(TestCase):
             syntax_type=1,
         )
         SqlWorkflowContent.objects.create(workflow=wf, sql_content=sql)
-        with self.assertRaises(AttributeError):
-            new_engine = PgSQLEngine(instance=self.ins)
+        # 构造一个执行时抛异常的 mock 连接
+        mock_cursor = MagicMock()
+        mock_cursor.execute.side_effect = psycopg2.ProgrammingError("模拟执行报错")
+        mock_conn = MagicMock()
+        mock_conn.cursor.return_value = mock_cursor
+        new_engine = PgSQLEngine(instance=self.ins)
+        with patch.object(PgSQLEngine, "get_connection", return_value=mock_conn):
             execute_result = new_engine.execute_workflow(workflow=wf)
-            self.assertIsInstance(execute_result, ReviewSet)
-            self.assertEqual(
-                execute_result.rows[0].__dict__.keys(), row.__dict__.keys()
-            )
+        self.assertIsInstance(execute_result, ReviewSet)
+        # 第一条语句应标记为失败
+        self.assertEqual(execute_result.rows[0].errlevel, 2)
+        self.assertEqual(execute_result.rows[0].stagestatus, "Execute Failed")
+        self.assertIn("异常信息", execute_result.rows[0].errormessage)
+        # 第二条语句应标记为未执行
+        self.assertEqual(len(execute_result.rows), 2)
+        self.assertIn("未执行", execute_result.rows[1].errormessage)
 
     @patch("psycopg2.connect")
     def test_processlist_not_idle(self, mock_connect):
@@ -753,6 +820,277 @@ class TestPgSQL(TestCase):
         # 调用 processlist 方法
         result = new_engine.processlist(command_type="Idle")
         self.assertEqual(result.rows, mock_cursor.fetchall.return_value)
+
+    # ==================== 数据字典对象管理测试 ====================
+
+    @patch(
+        "sql.engines.pgsql.PgSQLEngine.query",
+        return_value=ResultSet(
+            column_list=["table_name", "owner"],
+            rows=[("users", "postgres")],
+        ),
+    )
+    def test_get_table_meta_data(self, _query):
+        new_engine = PgSQLEngine(instance=self.ins)
+        data = new_engine.get_table_meta_data(
+            db_name="archery", tb_name="users", schema_name="public"
+        )
+        self.assertIn("column_list", data)
+        self.assertIn("rows", data)
+        self.assertEqual(data["rows"], ("users", "postgres"))
+
+    @patch(
+        "sql.engines.pgsql.PgSQLEngine.query",
+        return_value=ResultSet(
+            column_list=["列名", "数据类型"],
+            rows=[("id", "integer"), ("name", "text")],
+        ),
+    )
+    def test_get_table_desc_data(self, _query):
+        new_engine = PgSQLEngine(instance=self.ins)
+        data = new_engine.get_table_desc_data(
+            db_name="archery", tb_name="users", schema_name="public"
+        )
+        self.assertEqual(data["column_list"], ["列名", "数据类型"])
+        self.assertEqual(len(data["rows"]), 2)
+
+    @patch(
+        "sql.engines.pgsql.PgSQLEngine.query",
+        return_value=ResultSet(
+            column_list=["index_def"],
+            rows=[("CREATE INDEX idx_id ON users(id)",)],
+        ),
+    )
+    def test_get_table_index_data(self, _query):
+        new_engine = PgSQLEngine(instance=self.ins)
+        data = new_engine.get_table_index_data(
+            db_name="archery", tb_name="users", schema_name="public"
+        )
+        self.assertEqual(len(data["rows"]), 1)
+
+    @patch(
+        "sql.engines.pgsql.PgSQLEngine.query",
+        return_value=ResultSet(
+            column_list=["viewname", "definition"],
+            rows=[("v_users", "SELECT * FROM users")],
+        ),
+    )
+    def test_get_views_list(self, _query):
+        new_engine = PgSQLEngine(instance=self.ins)
+        data = new_engine.get_views_list(db_name="archery", schema_name="public")
+        self.assertIn("v", data)
+        self.assertEqual(data["v"][0][0], "v_users")
+
+    @patch(
+        "sql.engines.pgsql.PgSQLEngine.query",
+        return_value=ResultSet(
+            column_list=["schema_name", "view_name", "owner", "view_definition"],
+            rows=[("public", "v_users", "postgres", "SELECT * FROM users")],
+        ),
+    )
+    @patch("sql.engines.pgsql.PgSQLEngine.get_table_desc_data")
+    def test_get_view_detail(self, _desc, _query):
+        _desc.return_value = {"column_list": [], "rows": []}
+        new_engine = PgSQLEngine(instance=self.ins)
+        data = new_engine.get_view_detail(
+            db_name="archery", view_name="v_users", schema_name="public"
+        )
+        self.assertIn("meta_data", data)
+        self.assertEqual(data["view_definition"], "SELECT * FROM users")
+
+    @patch(
+        "sql.engines.pgsql.PgSQLEngine.query",
+        return_value=ResultSet(
+            column_list=["proname", "result"],
+            rows=[("calc_total", "integer")],
+        ),
+    )
+    def test_get_functions_list(self, _query):
+        new_engine = PgSQLEngine(instance=self.ins)
+        data = new_engine.get_functions_list(db_name="archery", schema_name="public")
+        self.assertIn("c", data)
+        self.assertEqual(data["c"][0][0], "calc_total")
+
+    @patch(
+        "sql.engines.pgsql.PgSQLEngine.query",
+        return_value=ResultSet(
+            column_list=["proname"],
+            rows=[("do_backup",)],
+        ),
+    )
+    def test_get_procedures_list(self, _query):
+        new_engine = PgSQLEngine(instance=self.ins)
+        data = new_engine.get_procedures_list(db_name="archery", schema_name="public")
+        self.assertIn("d", data)
+
+    @patch(
+        "sql.engines.pgsql.PgSQLEngine.query",
+        return_value=ResultSet(
+            column_list=["tgname", "triggerdef"],
+            rows=[("trg_audit", "BEFORE UPDATE ON users")],
+        ),
+    )
+    def test_get_triggers_list(self, _query):
+        new_engine = PgSQLEngine(instance=self.ins)
+        data = new_engine.get_triggers_list(db_name="archery", schema_name="public")
+        self.assertIn("t", data)
+        self.assertEqual(data["t"][0][0], "trg_audit")
+
+    def test_get_events_list_empty(self):
+        """PG 无原生事件，应返回空字典"""
+        new_engine = PgSQLEngine(instance=self.ins)
+        data = new_engine.get_events_list(db_name="archery")
+        self.assertEqual(data, {})
+
+    # ==================== 诊断功能测试 ====================
+
+    @patch(
+        "sql.engines.pgsql.PgSQLEngine.query",
+        return_value=ResultSet(
+            column_list=["blocked_pid", "blocking_pid"],
+            rows=[(123, 456)],
+        ),
+    )
+    def test_trxandlocks(self, _query):
+        new_engine = PgSQLEngine(instance=self.ins)
+        result = new_engine.trxandlocks()
+        self.assertIsInstance(result, ResultSet)
+        self.assertEqual(result.rows[0][0], 123)
+
+    @patch(
+        "sql.engines.pgsql.PgSQLEngine.query",
+        return_value=ResultSet(
+            column_list=["pid", "state"],
+            rows=[(123, "idle in transaction")],
+        ),
+    )
+    def test_get_long_transaction(self, _query):
+        new_engine = PgSQLEngine(instance=self.ins)
+        result = new_engine.get_long_transaction(thread_time=3)
+        self.assertIsInstance(result, ResultSet)
+        self.assertEqual(result.rows[0][0], 123)
+
+    @patch(
+        "sql.engines.pgsql.PgSQLEngine.query",
+        return_value=ResultSet(column_list=["pid"], rows=[(123,), (456,)]),
+    )
+    def test_get_kill_command(self, _query):
+        new_engine = PgSQLEngine(instance=self.ins)
+        kill_sql = new_engine.get_kill_command([123, 456])
+        self.assertIn("pg_terminate_backend(123)", kill_sql)
+        self.assertIn("pg_terminate_backend(456)", kill_sql)
+
+    def test_get_kill_command_invalid_id(self):
+        """非整数 pid 应返回 None"""
+        new_engine = PgSQLEngine(instance=self.ins)
+        self.assertIsNone(new_engine.get_kill_command([123, "abc"]))
+
+    @patch(
+        "sql.engines.pgsql.PgSQLEngine.query",
+        return_value=ResultSet(column_list=["pid"], rows=[(123,)]),
+    )
+    @patch("sql.engines.pgsql.PgSQLEngine.execute_db")
+    def test_kill(self, _exec, _query):
+        _exec.return_value = ResultSet(full_sql="")
+        new_engine = PgSQLEngine(instance=self.ins)
+        result = new_engine.kill([123])
+        self.assertIsInstance(result, ResultSet)
+
+    # ==================== 参数管理测试 ====================
+
+    @patch(
+        "sql.engines.pgsql.PgSQLEngine.query",
+        return_value=ResultSet(
+            column_list=["name", "setting"],
+            rows=[("shared_buffers", "128MB"), ("work_mem", "4MB")],
+        ),
+    )
+    def test_get_variables_all(self, _query):
+        new_engine = PgSQLEngine(instance=self.ins)
+        result = new_engine.get_variables()
+        self.assertIsInstance(result, ResultSet)
+        self.assertEqual(result.rows[0][0], "shared_buffers")
+
+    @patch(
+        "sql.engines.pgsql.PgSQLEngine.query",
+        return_value=ResultSet(
+            column_list=["name", "setting"], rows=[("work_mem", "4MB")]
+        ),
+    )
+    def test_get_variables_filtered(self, _query):
+        new_engine = PgSQLEngine(instance=self.ins)
+        result = new_engine.get_variables(variables=["work_mem"])
+        self.assertEqual(len(result.rows), 1)
+
+    @patch(
+        "sql.engines.pgsql.PgSQLEngine.query",
+        return_value=ResultSet(
+            column_list=["context"], rows=[("sighup",)]
+        ),
+    )
+    @patch("sql.engines.pgsql.PgSQLEngine.execute_db")
+    def test_set_variable_sighup(self, _exec, _query):
+        """sighup 类型参数应可修改"""
+        _exec.return_value = ResultSet(full_sql="")
+        new_engine = PgSQLEngine(instance=self.ins)
+        result = new_engine.set_variable("work_mem", "8MB")
+        self.assertFalse(result.error)
+        self.assertIn("ALTER SYSTEM", result.full_sql)
+
+    @patch(
+        "sql.engines.pgsql.PgSQLEngine.query",
+        return_value=ResultSet(
+            column_list=["context"], rows=[("postmaster",)]
+        ),
+    )
+    def test_set_variable_need_restart(self, _query):
+        """postmaster 类型参数（需重启）应被拒绝"""
+        new_engine = PgSQLEngine(instance=self.ins)
+        result = new_engine.set_variable("shared_buffers", "256MB")
+        self.assertTrue(result.error)
+        self.assertIn("重启", result.error)
+
+    @patch(
+        "sql.engines.pgsql.PgSQLEngine.query",
+        return_value=ResultSet(column_list=["context"], rows=[]),
+    )
+    def test_set_variable_not_exist(self, _query):
+        """不存在的参数应报错"""
+        new_engine = PgSQLEngine(instance=self.ins)
+        result = new_engine.set_variable("not_exist_param", "1")
+        self.assertTrue(result.error)
+        self.assertIn("不存在", result.error)
+
+    # ==================== Top 表空间（表维度）测试 ====================
+
+    @patch(
+        "sql.engines.pgsql.PgSQLEngine.query",
+        return_value=ResultSet(
+            column_list=[
+                "table_schema", "table_name", "engine", "total_size",
+                "table_rows", "data_size", "index_size", "data_free", "pct_free",
+            ],
+            rows=[
+                ("public", "big_table", "heap", 1024.5, 1000000, 900.0, 124.5, 0.0, 0.0),
+            ],
+        ),
+    )
+    def test_tablespace(self, _query):
+        new_engine = PgSQLEngine(instance=self.ins)
+        result = new_engine.tablespace(offset=0, row_count=14)
+        self.assertIsInstance(result, ResultSet)
+        self.assertEqual(result.rows[0][0], "public")
+        self.assertEqual(result.rows[0][1], "big_table")
+        self.assertEqual(result.rows[0][3], 1024.5)
+
+    @patch(
+        "sql.engines.pgsql.PgSQLEngine.query",
+        return_value=ResultSet(column_list=["count"], rows=[(42,)]),
+    )
+    def test_tablespace_count(self, _query):
+        new_engine = PgSQLEngine(instance=self.ins)
+        result = new_engine.tablespace_count()
+        self.assertEqual(result.rows[0][0], 42)
 
 
 class TestModel(TestCase):

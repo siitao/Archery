@@ -143,6 +143,8 @@ class KillSessionView(APIView):
             r = engine.kill_session(thread_ids)
         elif db_type == "tdengine":
             r = engine.kill_query(thread_ids)
+        elif db_type == "pgsql":
+            r = engine.kill(thread_ids)
         else:
             return JsonResponse(
                 {"status": 1, "msg": f"暂时不支持{db_type}类型数据库终止会话", "data": []}
@@ -204,6 +206,8 @@ class TrxAndLocksView(APIView):
             query_result = query_engine.trxandlocks()
         elif instance.db_type == "oracle":
             query_result = query_engine.lock_info()
+        elif instance.db_type == "pgsql":
+            query_result = query_engine.trxandlocks()
         else:
             return JsonResponse(
                 {"status": 1, "msg": f"暂时不支持{instance.db_type}类型数据库的锁等待查询", "data": []}

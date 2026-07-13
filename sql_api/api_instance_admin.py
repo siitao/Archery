@@ -781,7 +781,7 @@ class ParamCompareView(APIView):
         if ins1.db_type != ins2.db_type:
             return JsonResponse({"status": 1, "msg": "两个实例的数据库类型不一致，无法对比", "data": []})
 
-        if ins1.db_type not in {"mysql", "goinception"}:
+        if ins1.db_type not in {"mysql", "goinception", "pgsql"}:
             return JsonResponse({
                 "status": 1,
                 "msg": f"{ins1.db_type} 引擎不支持参数对比功能",

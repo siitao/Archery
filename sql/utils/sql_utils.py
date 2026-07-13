@@ -43,8 +43,11 @@ def get_syntax_type(sql, parser=True, db_type="mysql"):
         elif db_type == "oracle":
             ddl_re = r"^alter|^create|^drop|^rename|^truncate"
             dml_re = r"^delete|^exec|^insert|^select|^update|^with|^merge"
+        elif db_type == "pgsql":
+            ddl_re = r"^alter|^create|^drop|^rename|^truncate"
+            dml_re = r"^call|^delete|^insert|^select|^update|^with|^merge"
         else:
-            # TODO 其他数据库的解析正则
+            # 其他数据库的解析正则
             return None
         if re.match(ddl_re, sql, re.I):
             syntax_type = "DDL"
@@ -66,7 +69,11 @@ def remove_comments(sql, db_type="mysql"):
     sql_comments_re = {
         "oracle": [r"(?:--)[^\n]*\n", r"(?:\W|^)(?:remark|rem)\s+[^\n]*\n"],
         "mysql": [r"(?:#|--\s)[^\n]*\n"],
+        "pgsql": [r"(?:--)[^\n]*\n"],
     }
+    # 未显式声明的数据库类型回退到 mysql 的注释规则（兼容现有调用方）
+    if db_type not in sql_comments_re:
+        db_type = "mysql"
     specific_comment_re = sql_comments_re[db_type]
     additional_patterns = "|"
     if isinstance(specific_comment_re, str):

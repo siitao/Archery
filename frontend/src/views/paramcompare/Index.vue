@@ -15,8 +15,8 @@ const diffOnly = ref(true);
 
 const result = ref<ParamCompareResult | null>(null);
 
-/** 按 db_type 过滤的实例（仅 mysql/goinception 支持） */
-const supportedTypes = ["mysql", "goinception"];
+/** 按 db_type 过滤的实例（mysql/goinception/pgsql 支持） */
+const supportedTypes = ["mysql", "goinception", "pgsql"];
 const filteredInstances = computed(() =>
   instances.value.filter((i) => !dbType.value || i.db_type === dbType.value)
 );
