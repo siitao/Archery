@@ -184,7 +184,7 @@ class AliyunRDS(MysqlEngine):
             SlowRecord["ExecutionStartTime"] = Aliyun.utc2local(
                 SlowRecord["ExecutionStartTime"], utc_format="%Y-%m-%dT%H:%M:%SZ"
             )
-            SlowRecord["HostAddress"] = SlowRecord["HostAddress"].split("[")[0]
+            # HostAddress 保持原样，不做处理
 
         result = {
             "total": json.loads(slowsql)["TotalRecordCount"],

@@ -4,7 +4,7 @@ import logging
 
 from common.utils.convert import Convert
 from sql.engines import get_engine
-from sql.models import Instance
+from sql.models import Instance, AliyunRdsConfig
 from sql.utils.resource_group import user_instances
 from sql.utils.sql_utils import filter_db_list
 
@@ -18,7 +18,20 @@ def list_user_accessible_instances(user, type=None, db_type=None, tag_codes=None
         .order_by(Convert("instance_name", "gbk").asc())
         .values("id", "type", "db_type", "instance_name")
     )
-    return {"status": 0, "msg": "ok", "data": [row for row in instances]}
+
+    # 获取阿里云 RDS 实例 ID 列表
+    aliyun_rds_instance_ids = set(
+        AliyunRdsConfig.objects.filter(is_enable=True)
+        .values_list("instance_id", flat=True)
+    )
+
+    # 添加 is_aliyun_rds 字段
+    result = []
+    for row in instances:
+        row["is_aliyun_rds"] = row["id"] in aliyun_rds_instance_ids
+        result.append(row)
+
+    return {"status": 0, "msg": "ok", "data": result}
 
 
 def _resolve_instance_for_user(user, instance_id=None, instance_name=None):
