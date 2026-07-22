@@ -11,7 +11,7 @@ from drf_spectacular.views import (
     SpectacularRedocView,
     SpectacularSwaggerView,
 )
-from . import api_user, api_instance, api_workflow, api_sqlquery, api_document, api_query_priv, api_archiver, api_dashboard, api_slowlog, api_config, api_auth_config, api_dictionary, api_instance_admin, api_diagnostic, api_slowquery, api_resource_group, api_misc, api_auth
+from . import api_user, api_instance, api_workflow, api_sqlquery, api_document, api_query_priv, api_archiver, api_dashboard, api_config, api_auth_config, api_dictionary, api_instance_admin, api_diagnostic, api_slowquery, api_slowquery_v2, api_resource_group, api_misc, api_auth
 
 router = routers.DefaultRouter()
 router.register(
@@ -92,10 +92,6 @@ urlpatterns = [
         "v1/dashboard/charts/",
         api_dashboard.DashboardCharts.as_view(),
     ),
-    path(
-        "v1/slowquery/trend/",
-        api_slowlog.SlowQueryTrend.as_view(),
-    ),
     path("v1/config/", api_config.ConfigView.as_view()),
     path("v1/config/change/", api_config.ChangeConfigView.as_view()),
     path("v1/config/check_ai/", api_config.CheckAIConnectionView.as_view()),
@@ -130,9 +126,13 @@ urlpatterns = [
     path("v1/diagnostic/tablespace/", api_diagnostic.TableSpaceView.as_view()),
     path("v1/diagnostic/trxandlocks/", api_diagnostic.TrxAndLocksView.as_view()),
     path("v1/diagnostic/innodb_trx/", api_diagnostic.InnodbTrxView.as_view()),
-    # ---- 慢查日志 ----
-    path("v1/slowquery/review/", api_slowquery.SlowQueryReviewView.as_view()),
-    path("v1/slowquery/review_history/", api_slowquery.SlowQueryReviewHistoryView.as_view()),
+    # ---- 慢查日志（新版本） ----
+    path("v1/slowquery/review/", api_slowquery_v2.SlowQuerySummaryView.as_view()),
+    path("v1/slowquery/review_history/", api_slowquery_v2.SlowQueryDetailView.as_view()),
+    path("v1/slowquery/summary/", api_slowquery_v2.SlowQuerySummaryView.as_view()),
+    path("v1/slowquery/detail/", api_slowquery_v2.SlowQueryDetailView.as_view()),
+    path("v1/slowquery/trend/", api_slowquery_v2.SlowQueryTrendView.as_view()),
+    path("v1/slowquery/collect/", api_slowquery_v2.SlowQueryCollectView.as_view()),
     # ---- SQL 分析 ----
     path("v1/sql_analyze/generate/", api_slowquery.SqlAnalyzeGenerateView.as_view()),
     path("v1/sql_analyze/analyze/", api_slowquery.SqlAnalyzeAnalyzeView.as_view()),

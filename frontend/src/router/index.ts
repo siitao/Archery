@@ -188,7 +188,7 @@ const routes: RouteRecordRaw[] = [
       {
         path: "slowquery",
         name: "slowquery",
-        component: () => import("@/views/slowquery/Index.vue"),
+        component: () => import("@/views/slowquery/IndexV2.vue"),
         meta: { title: "慢查日志", perm: "sql.menu_slowquery" },
       },
       {

@@ -1,0 +1,521 @@
+<script setup lang="ts">
+import { ref, watch, onMounted, computed } from "vue";
+import { ElMessage } from "element-plus";
+import type { EChartsOption } from "echarts";
+import { useInstanceSelect } from "@/composables/useInstanceSelect";
+import { fetchQueryResources } from "@/api/sqlquery";
+import {
+  fetchSlowSummaryV2,
+  fetchSlowDetailV2,
+  fetchSlowTrendV2,
+} from "@/api/phase2";
+import EChart from "@/components/EChart.vue";
+import TruncateCell from "@/components/TruncateCell.vue";
+
+const { instanceName, instanceGroups, currentInstance, loadInstances } =
+  useInstanceSelect();
+
+const dbName = ref("");
+const dbOptions = ref<string[]>([]);
+const dateRange = ref<[string, string] | null>(null);
+const activeTab = ref("detail");
+
+const summaryRows = ref<Record<string, unknown>[]>([]);
+const summaryCols = ref<string[]>([]);
+const detailRows = ref<Record<string, unknown>[]>([]);
+const detailCols = ref<string[]>([]);
+const loading = ref(false);
+
+// 分页
+const currentPage = ref(1);
+const pageSize = ref(50);
+const total = ref(0);
+
+// 当前数据库类型
+const currentDbType = computed(() => currentInstance.value?.db_type || "");
+
+/** SQL 长文本列名集合（大小写不敏感，含中文列名） */
+const SQL_COLUMNS = new Set([
+  // 英文列名
+  "sqltext", "sql_text", "sql", "info", "fingerprint",
+  "commandtext", "command_text", "samplesql", "sample_sql",
+  // 中文列名（阿里云/MongoDB 返回）
+  "sql 文本", "sql 文档", "命令文本", "命令", "示例sql", "示例命令",
+]);
+
+function isSqlColumn(col: string): boolean {
+  return SQL_COLUMNS.has(col.toLowerCase());
+}
+
+/**
+ * 统一列配置
+ *
+ * label: 中文表头
+ * summary: 是否在统计页显示
+ * detail: 是否在明细页显示
+ */
+interface ColumnConfig {
+  label: string;
+  summary?: boolean;
+  detail?: boolean;
+}
+
+/** 字段配置映射 */
+const COLUMN_CONFIG: Record<string, ColumnConfig> = {
+  // 通用字段
+  SQLText: { label: "SQL 文本", summary: true, detail: true },
+  SQLId: { label: "SQL ID" },
+  FingerPrint: { label: "SQL 指纹" },
+  DBName: { label: "数据库", summary: true, detail: true },
+  CreateTime: { label: "最近出现时间", summary: true },
+  ExecutionStartTime: { label: "执行开始时间", detail: true },
+  HostAddress: { label: "客户端地址", detail: true },
+  UserName: { label: "用户名", detail: true },
+
+  // MySQL 统计字段
+  MySQLTotalExecutionCounts: { label: "执行次数", summary: true },
+  MySQLTotalExecutionTimes: { label: "总执行耗时(ms)", summary: true },
+
+  // 通用统计字段
+  TotalExecutionCounts: { label: "执行次数", summary: true },
+  TotalExecutionTimes: { label: "总执行耗时(ms)", summary: true },
+  QueryTimeAvg: { label: "平均耗时(ms)", summary: true },
+  QueryTimePct95: { label: "95% 耗时(ms)", summary: true },
+  ParseRowAvg: { label: "平均扫描行数", summary: true },
+  ReturnRowAvg: { label: "平均返回行数", summary: true },
+
+  // MySQL 明细字段
+  QueryTimes: { label: "执行耗时(ms)", detail: true },
+  LockTimes: { label: "锁等待时间(ms)", detail: true },
+  ParseRowCounts: { label: "扫描行数", detail: true },
+  ReturnRowCounts: { label: "返回行数", detail: true },
+  ParseTotalRowCounts: { label: "总扫描行数", summary: true },
+  ReturnTotalRowCounts: { label: "总返回行数", summary: true },
+
+  // PgSQL 字段
+  SharedBlksHit: { label: "缓存命中", summary: true, detail: true },
+  SharedBlksRead: { label: "磁盘读取", summary: true, detail: true },
+
+  // MongoDB 字段
+  OperationType: { label: "操作类型", summary: true, detail: true },
+  CollectionName: { label: "集合", summary: true, detail: true },
+  DocsExaminedAvg: { label: "平均扫描文档数", summary: true },
+  DocsReturnedAvg: { label: "平均返回文档数", summary: true },
+  DocsExamined: { label: "扫描文档数", detail: true },
+  DocsReturned: { label: "返回文档数", detail: true },
+  NReturned: { label: "返回结果数", detail: true },
+  HasSort: { label: "包含排序", summary: true, detail: true },
+  PlanSummary: { label: "执行计划", detail: true },
+  CommandText: { label: "命令文本", detail: true },
+
+  // Redis 字段
+  DurationPct95: { label: "95% 耗时(ms)", summary: true },
+  HostName: { label: "主机", detail: true },
+  Duration: { label: "执行耗时(ms)", detail: true },
+};
+
+/** 获取列标签 */
+function colLabel(col: string): string {
+  return COLUMN_CONFIG[col]?.label || col;
+}
+
+/** 可见的统计列 */
+const visibleSummaryCols = computed(() => {
+  return summaryCols.value.filter((col) => COLUMN_CONFIG[col]?.summary);
+});
+
+/** 可见的明细列 */
+const visibleDetailCols = computed(() => {
+  // 阿里云 RDS 数据，直接返回所有字段
+  const firstRow = detailRows.value[0];
+  if (firstRow && !firstRow.hasOwnProperty("sql_hash")) {
+    return detailCols.value;
+  }
+
+  // 本地数据库：根据配置过滤
+  return detailCols.value.filter((col) => COLUMN_CONFIG[col]?.detail);
+});
+
+async function loadDbs() {
+  if (!currentInstance.value) return;
+  try {
+    dbOptions.value = await fetchQueryResources({
+      instance_id: currentInstance.value.id,
+      resource_type: "database",
+    });
+  } catch {
+    // 拦截器已提示
+  }
+}
+
+function dateStr(i: 0 | 1) {
+  return dateRange.value?.[i] || undefined;
+}
+
+async function loadSummary() {
+  if (!instanceName.value) return;
+  loading.value = true;
+  summaryRows.value = [];
+  try {
+    const r = await fetchSlowSummaryV2({
+      instance_name: instanceName.value,
+      db_name: dbName.value,
+      StartTime: dateStr(0),
+      EndTime: dateStr(1),
+      limit: pageSize.value,
+      offset: (currentPage.value - 1) * pageSize.value,
+    });
+    summaryRows.value = r.rows;
+    total.value = r.total;
+    if (r.rows.length) summaryCols.value = Object.keys(r.rows[0]);
+  } catch {
+    // 拦截器已提示
+  } finally {
+    loading.value = false;
+  }
+}
+
+async function loadDetail() {
+  if (!instanceName.value) return;
+  loading.value = true;
+  detailRows.value = [];
+  try {
+    const r = await fetchSlowDetailV2({
+      instance_name: instanceName.value,
+      db_name: dbName.value,
+      StartTime: dateStr(0),
+      EndTime: dateStr(1),
+      limit: pageSize.value,
+      offset: (currentPage.value - 1) * pageSize.value,
+    });
+    detailRows.value = r.rows;
+    total.value = r.total;
+    if (r.rows.length) detailCols.value = Object.keys(r.rows[0]);
+  } catch {
+    // 拦截器已提示
+  } finally {
+    loading.value = false;
+  }
+}
+
+// 判断是否是阿里云 RDS（通过实例名称或后端返回的标识）
+const isAliyunRds = computed(() => {
+  // 可以通过实例名称特征判断，或者后端返回的字段
+  // 这里简单判断：如果实例名称包含特定标识或后端返回了相关字段
+  return currentInstance.value?.is_aliyun_rds || false;
+});
+
+// 判断是否是阿里云 Redis RDS
+const isAliyunRedisRds = computed(() => {
+  return isAliyunRds.value && currentDbType.value === "redis";
+});
+
+function onQuery() {
+  // 阿里云 RDS 时间条件验证
+  if (isAliyunRds.value) {
+    if (!dateRange.value || !dateRange.value[0] || !dateRange.value[1]) {
+      ElMessage.warning("阿里云 RDS 实例必须选择时间范围");
+      return;
+    }
+
+    // Redis RDS 时间范围最大为一天
+    if (isAliyunRedisRds.value) {
+      const start = new Date(dateRange.value[0]);
+      const end = new Date(dateRange.value[1]);
+      const diffDays = (end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24);
+      if (diffDays > 1) {
+        ElMessage.warning("阿里云 Redis RDS 时间范围最大为1天");
+        return;
+      }
+    }
+  }
+
+  currentPage.value = 1;
+  if (activeTab.value === "summary") loadSummary();
+  else loadDetail();
+}
+
+function onPageChange(page: number) {
+  currentPage.value = page;
+  if (activeTab.value === "summary") loadSummary();
+  else loadDetail();
+}
+
+function onSizeChange(size: number) {
+  pageSize.value = size;
+  currentPage.value = 1;
+  if (activeTab.value === "summary") loadSummary();
+  else loadDetail();
+}
+
+watch(instanceName, () => {
+  dbName.value = "";
+  if (currentInstance.value) loadDbs();
+});
+
+function onTabChange(name: string | number) {
+  currentPage.value = 1;
+  total.value = 0;
+  if (String(name) === "summary") loadSummary();
+  else loadDetail();
+}
+
+// 趋势弹窗
+const trendVisible = ref(false);
+const trendLoading = ref(false);
+const trendOption = ref<Record<string, unknown>>({});
+const trendTitle = ref("");
+
+async function openTrend(row: Record<string, unknown>) {
+  const sqlHash = String(row.SQLId || row.sql_hash || "");
+  if (!sqlHash) return ElMessage.warning("该行无 SQL ID，无法查看趋势");
+
+  trendTitle.value = String(row.SQLText || row.fingerprint || sqlHash).slice(0, 80);
+  trendVisible.value = true;
+  trendLoading.value = true;
+  trendOption.value = {};
+
+  try {
+    const r = await fetchSlowTrendV2({
+      instance_name: instanceName.value,
+      sql_hash: sqlHash,
+      days: 7,
+    });
+
+    if (r.status !== 0) {
+      ElMessage.error(r.msg || "获取趋势数据失败");
+      return;
+    }
+
+    const data = r.data || [];
+    const dates = data.map((d) => d.date);
+    const counts = data.map((d) => d.count);
+    const avgTimes = data.map((d) => d.avg_time);
+
+    trendOption.value = {
+      title: {
+        text: "SQL 历史趋势（近7天）",
+        left: "center",
+        textStyle: { fontSize: 14 },
+      },
+      tooltip: { trigger: "axis" },
+      legend: { top: 24 },
+      grid: {
+        left: 56,
+        right: 24,
+        top: 56,
+        bottom: 48,
+        containLabel: true,
+      },
+      xAxis: {
+        type: "category",
+        data: dates,
+        boundaryGap: false,
+        axisLabel: { interval: 0, rotate: dates.length > 7 ? 45 : 0 },
+      },
+      yAxis: [
+        { type: "value", name: "执行次数" },
+        { type: "value", name: "平均耗时(秒)" },
+      ],
+      series: [
+        {
+          name: "执行次数",
+          type: "line",
+          smooth: true,
+          areaStyle: { opacity: 0.3 },
+          data: counts,
+        },
+        {
+          name: "平均耗时",
+          type: "line",
+          smooth: true,
+          yAxisIndex: 1,
+          showSymbol: false,
+          areaStyle: { opacity: 0.3 },
+          data: avgTimes,
+        },
+      ],
+    } as EChartsOption;
+  } catch {
+    // 拦截器已提示
+  } finally {
+    trendLoading.value = false;
+  }
+}
+
+onMounted(loadInstances);
+</script>
+
+<template>
+  <div class="slow-page">
+    <el-card shadow="never" class="filter-card">
+      <el-form :inline="true" @submit.prevent>
+        <el-form-item label="实例">
+          <el-select
+            v-model="instanceName"
+            filterable
+            placeholder="选择实例"
+            style="width: 220px"
+          >
+            <el-option-group
+              v-for="g in instanceGroups"
+              :key="g.label"
+              :label="g.label"
+            >
+              <el-option
+                v-for="i in g.items"
+                :key="i.id"
+                :label="i.instance_name"
+                :value="i.instance_name"
+              />
+            </el-option-group>
+          </el-select>
+        </el-form-item>
+        <el-form-item label="库">
+          <el-select
+            v-model="dbName"
+            filterable
+            placeholder="全部"
+            clearable
+            style="width: 180px"
+          >
+            <el-option v-for="d in dbOptions" :key="d" :label="d" :value="d" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="时间">
+          <el-date-picker
+            v-model="dateRange"
+            type="daterange"
+            value-format="YYYY-MM-DD"
+            range-separator="-"
+            start-placeholder="开始"
+            end-placeholder="结束"
+            style="width: 240px"
+          />
+        </el-form-item>
+        <el-form-item>
+          <el-button type="primary" @click="onQuery">查询</el-button>
+        </el-form-item>
+      </el-form>
+    </el-card>
+
+    <el-card shadow="never">
+      <el-tabs v-model="activeTab" @tab-change="onTabChange">
+        <el-tab-pane label="慢查明细" name="detail">
+          <el-table
+            v-loading="loading"
+            :data="detailRows"
+            stripe
+            border
+            max-height="560"
+          >
+            <el-table-column
+              v-for="col in visibleDetailCols"
+              :key="col"
+              :prop="col"
+              :label="colLabel(col)"
+              min-width="140"
+              :show-overflow-tooltip="!isSqlColumn(col)"
+            >
+              <template v-if="isSqlColumn(col)" #default="{ row }">
+                <TruncateCell
+                  :value="(row as Record<string, unknown>)[col]"
+                  :row="row as Record<string, unknown>"
+                  :col="col"
+                />
+              </template>
+            </el-table-column>
+          </el-table>
+        </el-tab-pane>
+
+        <el-tab-pane label="慢查统计" name="summary">
+          <el-table
+            v-loading="loading"
+            :data="summaryRows"
+            stripe
+            border
+            max-height="560"
+          >
+            <el-table-column
+              v-for="col in visibleSummaryCols"
+              :key="col"
+              :prop="col"
+              :label="colLabel(col)"
+              min-width="140"
+              :show-overflow-tooltip="!isSqlColumn(col)"
+            >
+              <template v-if="isSqlColumn(col)" #default="{ row }">
+                <TruncateCell
+                  :value="(row as Record<string, unknown>)[col]"
+                  :row="row as Record<string, unknown>"
+                  :col="col"
+                />
+              </template>
+            </el-table-column>
+            <el-table-column label="操作" width="90" fixed="right">
+              <template #default="{ row }">
+                <el-button
+                  link
+                  type="primary"
+                  @click="openTrend(row as Record<string, unknown>)"
+                >
+                  趋势
+                </el-button>
+              </template>
+            </el-table-column>
+          </el-table>
+        </el-tab-pane>
+      </el-tabs>
+
+      <!-- 分页 -->
+      <div class="pagination-wrapper">
+        <el-pagination
+          v-model:current-page="currentPage"
+          v-model:page-size="pageSize"
+          :page-sizes="[20, 50, 100, 200]"
+          :total="total"
+          layout="total, sizes, prev, pager, next, jumper"
+          @current-change="onPageChange"
+          @size-change="onSizeChange"
+        />
+      </div>
+    </el-card>
+
+    <!-- 趋势弹窗 -->
+    <el-dialog v-model="trendVisible" title="慢查历史趋势" width="900px">
+      <div class="trend-title" :title="trendTitle">{{ trendTitle }}</div>
+      <EChart
+        v-loading="trendLoading"
+        :option="trendOption"
+        height="420px"
+      />
+    </el-dialog>
+  </div>
+</template>
+
+<style scoped lang="scss">
+.slow-page {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.filter-card :deep(.el-form-item) {
+  margin-bottom: 0;
+}
+
+.pagination-wrapper {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 16px;
+}
+
+.trend-title {
+  margin-bottom: 12px;
+  font-size: 13px;
+  color: var(--el-text-color-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+</style>

@@ -307,6 +307,92 @@ export function fetchSlowTrend(checksum: string, instanceName: string) {
     .then((res) => res.data);
 }
 
+// ============ 慢查日志 v2（统一采集架构） ============
+
+/** 慢查统计（POST /api/v1/slowquery/summary/） */
+export function fetchSlowSummaryV2(params: {
+  instance_name: string;
+  db_name?: string;
+  StartTime?: string;
+  EndTime?: string;
+  limit?: number;
+  offset?: number;
+  search?: string;
+}) {
+  return request
+    .post<{ status: number; msg: string; total?: number; rows?: Record<string, unknown>[] }>(
+      "/api/v1/slowquery/summary/",
+      {
+        instance_name: params.instance_name,
+        db_name: params.db_name ?? "",
+        StartTime: params.StartTime ?? "",
+        EndTime: params.EndTime ?? "",
+        limit: params.limit ?? 50,
+        offset: params.offset ?? 0,
+        search: params.search ?? "",
+      },
+    )
+    .then((res) => {
+      const e = checkStatus(res.data);
+      return { total: e.total || 0, rows: e.rows || [] };
+    });
+}
+
+/** 慢查明细（POST /api/v1/slowquery/detail/） */
+export function fetchSlowDetailV2(params: {
+  instance_name: string;
+  db_name?: string;
+  StartTime?: string;
+  EndTime?: string;
+  SQLId?: string;
+  limit?: number;
+  offset?: number;
+  search?: string;
+}) {
+  return request
+    .post<{ status: number; msg: string; total?: number; rows?: Record<string, unknown>[] }>(
+      "/api/v1/slowquery/detail/",
+      {
+        instance_name: params.instance_name,
+        db_name: params.db_name ?? "",
+        StartTime: params.StartTime ?? "",
+        EndTime: params.EndTime ?? "",
+        SQLId: params.SQLId ?? "",
+        limit: params.limit ?? 50,
+        offset: params.offset ?? 0,
+        search: params.search ?? "",
+      },
+    )
+    .then((res) => {
+      const e = checkStatus(res.data);
+      return { total: e.total || 0, rows: e.rows || [] };
+    });
+}
+
+/** 慢查趋势（GET /api/v1/slowquery/trend/） */
+export function fetchSlowTrendV2(params: {
+  instance_name: string;
+  sql_hash: string;
+  days?: number;
+}) {
+  return request
+    .get<{ status: number; data?: { date: string; count: number; avg_time: number; max_time: number }[] }>(
+      "/api/v1/slowquery/trend/",
+      { params }
+    )
+    .then((res) => res.data);
+}
+
+/** 手动触发采集（POST /api/v1/slowquery/collect/） */
+export function triggerSlowCollect(params: {
+  instance_name: string;
+  type?: "all" | "summary" | "detail";
+}) {
+  return request
+    .post<{ status: number; msg: string }>("/api/v1/slowquery/collect/", params)
+    .then((res) => checkStatus(res.data));
+}
+
 // ============ SchemaSync instance.py ============
 
 export interface SchemaSyncResult {

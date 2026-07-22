@@ -12,6 +12,8 @@
  *    <TruncateCell :value="row.info" title-field="id" :row="row" col="info" />
  */
 import { ref, computed } from "vue";
+import { ElMessage } from "element-plus";
+import { CopyDocument } from "@element-plus/icons-vue";
 
 const props = withDefaults(
   defineProps<{
@@ -53,6 +55,22 @@ function open() {
   content.value = String(props.value ?? "");
   visible.value = true;
 }
+
+async function copyContent() {
+  try {
+    await navigator.clipboard.writeText(content.value);
+    ElMessage.success("已复制到剪贴板");
+  } catch {
+    // 降级方案
+    const textarea = document.createElement("textarea");
+    textarea.value = content.value;
+    document.body.appendChild(textarea);
+    textarea.select();
+    document.execCommand("copy");
+    document.body.removeChild(textarea);
+    ElMessage.success("已复制到剪贴板");
+  }
+}
 </script>
 
 <template>
@@ -63,6 +81,15 @@ function open() {
     </el-button>
   </span>
   <el-dialog v-model="visible" :title="title" width="800px" append-to-body>
+    <template #header>
+      <div class="tc-dialog-header">
+        <span>{{ title }}</span>
+        <el-button type="primary" size="small" @click="copyContent">
+          <el-icon><CopyDocument /></el-icon>
+          复制
+        </el-button>
+      </div>
+    </template>
     <pre class="tc-pre">{{ content }}</pre>
   </el-dialog>
 </template>
@@ -70,6 +97,13 @@ function open() {
 <style scoped lang="scss">
 .tc-root {
   word-break: break-all;
+}
+
+.tc-dialog-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  width: 100%;
 }
 
 .tc-pre {

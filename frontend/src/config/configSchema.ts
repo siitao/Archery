@@ -40,6 +40,7 @@ export const CONFIG_SECTIONS = [
 export const CONFIG_SUBSECTIONS: Record<string, string[]> = {
   "功能模块配置": ["SQL上线", "SQL查询", "数据导出", "存储配置", "SQL优化"],
   "通知配置": ["基础通知", "钉钉通知", "企业微信通知", "短信发送"],
+  "其他配置": ["基础配置", "慢日志配置"],
 };
 
 // 静态选项
@@ -185,17 +186,22 @@ export const CONFIG_FIELDS: ConfigField[] = [
   { key: "default_chat_model", label: "默认模型", type: "text", section: "AI 配置", desc: "如 gpt-3.5-turbo、gpt-4o、deepseek-chat 等" },
   { key: "default_query_template", label: "查询模板", type: "text", section: "AI 配置", desc: "生成SQL的提示词模板" },
 
-  // ── 其他配置 ──────────────────────────────────
-  { key: "index_path_url", label: "首页地址", type: "text", section: "其他配置" },
-  { key: "my2sql", label: "my2sql 路径", type: "text", section: "其他配置" },
-  { key: "default_auth_group", label: "默认权限组", type: "select", section: "其他配置", dynamic: "groups" },
-  { key: "default_resource_group", label: "默认资源组", type: "select", section: "其他配置", dynamic: "resourceGroups" },
-  { key: "api_user_whitelist", label: "API 用户白名单", type: "select", section: "其他配置", dynamic: "users" },
-  { key: "lock_time_threshold", label: "锁定时间阈值", type: "number", section: "其他配置" },
-  { key: "lock_cnt_threshold", label: "锁定次数阈值", type: "number", section: "其他配置" },
-  { key: "watermark_enabled", label: "开启水印", type: "boolean", section: "其他配置" },
-  { key: "enforce_2fa", label: "强制 2FA", type: "boolean", section: "其他配置" },
-  { key: "announcement_content_enabled", label: "公告开关", type: "boolean", section: "其他配置" },
-  { key: "announcement_content", label: "公告内容", type: "text", section: "其他配置", showWhen: { key: "announcement_content_enabled", value: true } },
-  { key: "custom_title_suffix", label: "自定义标题后缀", type: "text", section: "其他配置" },
+  // ── 其他配置 / 基础配置 ──────────────────────────────────
+  { key: "index_path_url", label: "首页地址", type: "text", section: "其他配置", subsection: "基础配置" },
+  { key: "my2sql", label: "my2sql 路径", type: "text", section: "其他配置", subsection: "基础配置" },
+  { key: "default_auth_group", label: "默认权限组", type: "select", section: "其他配置", subsection: "基础配置", dynamic: "groups" },
+  { key: "default_resource_group", label: "默认资源组", type: "select", section: "其他配置", subsection: "基础配置", dynamic: "resourceGroups" },
+  { key: "api_user_whitelist", label: "API 用户白名单", type: "select", section: "其他配置", subsection: "基础配置", dynamic: "users" },
+  { key: "lock_time_threshold", label: "锁定时间阈值", type: "number", section: "其他配置", subsection: "基础配置" },
+  { key: "lock_cnt_threshold", label: "锁定次数阈值", type: "number", section: "其他配置", subsection: "基础配置" },
+  { key: "watermark_enabled", label: "开启水印", type: "boolean", section: "其他配置", subsection: "基础配置" },
+  { key: "enforce_2fa", label: "强制 2FA", type: "boolean", section: "其他配置", subsection: "基础配置" },
+  { key: "announcement_content_enabled", label: "公告开关", type: "boolean", section: "其他配置", subsection: "基础配置" },
+  { key: "announcement_content", label: "公告内容", type: "text", section: "其他配置", subsection: "基础配置", showWhen: { key: "announcement_content_enabled", value: true } },
+  { key: "custom_title_suffix", label: "自定义标题后缀", type: "text", section: "其他配置", subsection: "基础配置" },
+
+  // ── 其他配置 / 慢日志配置 ──────────────────────────────────
+  { key: "slow_query_retention_days", label: "数据保留天数", type: "number", section: "其他配置", subsection: "慢日志配置", desc: "超过此天数的慢查询明细数据将被自动清理，默认30天" },
+  { key: "slow_query_cleanup_batch_size", label: "每批删除数量", type: "number", section: "其他配置", subsection: "慢日志配置", desc: "批量删除时每批处理的记录数，默认5000" },
+  { key: "slow_query_cleanup_batch_sleep", label: "批次间隔(秒)", type: "number", section: "其他配置", subsection: "慢日志配置", desc: "每批删除后的等待秒数，避免数据库压力过大，默认1秒" },
 ];
