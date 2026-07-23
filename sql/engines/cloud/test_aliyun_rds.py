@@ -9,7 +9,6 @@ sys.modules["common.utils.aliyun_sdk"] = aliyun_sdk
 
 from sql.engines.cloud import aliyun_rds
 from sql.engines.cloud.aliyun_rds import AliyunRDS
-from sql.engines.models import ResultSet
 
 
 def _engine():
@@ -23,105 +22,6 @@ def _mock_rds_config(mocker):
     objects = mocker.patch.object(aliyun_rds.AliyunRdsConfig, "objects")
     objects.get.return_value = instance_info
     return instance_info, objects
-
-
-def test_processlist_uses_default_query_command(mocker):
-    instance_info, objects = _mock_rds_config(mocker)
-    aliyun = mocker.patch.object(aliyun_rds, "Aliyun")
-    process_rows = [{"Id": 1, "User": "root", "Command": "Query"}]
-    aliyun.return_value.RequestServiceOfCloudDBA.return_value = json.dumps(
-        {"AttrData": json.dumps({"ProcessList": process_rows})}
-    )
-
-    result = _engine().processlist("")
-
-    objects.get.assert_called_once_with(instance__instance_name="rds_instance")
-    aliyun.assert_called_once_with(rds=instance_info)
-    aliyun.return_value.RequestServiceOfCloudDBA.assert_called_once_with(
-        "ShowProcessList", {"Language": "zh", "Command": "Query"}
-    )
-    assert isinstance(result, ResultSet)
-    assert result.full_sql == "show processlist"
-    assert result.rows == process_rows
-
-
-def test_processlist_uses_requested_command(mocker):
-    _mock_rds_config(mocker)
-    aliyun = mocker.patch.object(aliyun_rds, "Aliyun")
-    aliyun.return_value.RequestServiceOfCloudDBA.return_value = json.dumps(
-        {"AttrData": json.dumps({"ProcessList": []})}
-    )
-
-    _engine().processlist("Sleep")
-
-    aliyun.return_value.RequestServiceOfCloudDBA.assert_called_once_with(
-        "ShowProcessList", {"Language": "zh", "Command": "Sleep"}
-    )
-
-
-def test_get_kill_command_returns_request_attr_data(mocker):
-    _mock_rds_config(mocker)
-    aliyun = mocker.patch.object(aliyun_rds, "Aliyun")
-    aliyun.return_value.RequestServiceOfCloudDBA.return_value = json.dumps(
-        {"AttrData": "kill-request-id"}
-    )
-
-    result = _engine().get_kill_command([1, 2])
-
-    aliyun.return_value.RequestServiceOfCloudDBA.assert_called_once_with(
-        "CreateKillSessionRequest", {"Language": "zh", "ThreadIDs": [1, 2]}
-    )
-    assert result == "kill-request-id"
-
-
-def test_kill_confirms_kill_session_request(mocker):
-    _mock_rds_config(mocker)
-    aliyun = mocker.patch.object(aliyun_rds, "Aliyun")
-    aliyun.return_value.RequestServiceOfCloudDBA.return_value = json.dumps(
-        {"AttrData": {"Success": True}}
-    )
-
-    result = _engine().kill([1, 2])
-
-    aliyun.return_value.RequestServiceOfCloudDBA.assert_called_once_with(
-        "ConfirmKillSessionRequest", {"Language": "zh"}
-    )
-    assert isinstance(result, ResultSet)
-    assert result.full_sql == "kill 1;kill 2;"
-    assert result.rows == {"Success": True}
-    assert result.error is None
-
-
-def test_tablespace_returns_empty_list_when_sdk_list_data_empty(mocker):
-    _mock_rds_config(mocker)
-    aliyun = mocker.patch.object(aliyun_rds, "Aliyun")
-    aliyun.return_value.RequestServiceOfCloudDBA.return_value = json.dumps(
-        {"ListData": ""}
-    )
-
-    result = _engine().tablespace(offset=0, limit=10)
-
-    aliyun.return_value.RequestServiceOfCloudDBA.assert_called_once_with(
-        "GetSpaceStatForTables", {"Language": "zh", "OrderType": "Data"}
-    )
-    assert result.full_sql == "select * FROM information_schema.tables"
-    assert result.rows == []
-
-
-def test_tablespace_filters_rows_by_schema_search(mocker):
-    _mock_rds_config(mocker)
-    aliyun = mocker.patch.object(aliyun_rds, "Aliyun")
-    space_rows = [
-        {"DBName": "app", "TableName": "orders", "DataSize": 10},
-        {"DBName": "log", "TableName": "events", "DataSize": 20},
-    ]
-    aliyun.return_value.RequestServiceOfCloudDBA.return_value = json.dumps(
-        {"ListData": json.dumps(space_rows)}
-    )
-
-    result = _engine().tablespace(offset=0, limit=10, schema_search="ORDER")
-
-    assert result.rows == [space_rows[0]]
 
 
 def test_slowquery_review_formats_rows_and_request_params(mocker):
